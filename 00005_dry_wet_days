@@ -1,0 +1,55 @@
+
+var cor = [
+  [52.44694261887793,36.17836425046897],
+  [53.04020433762793,36.17836425046897],
+  [53.04020433762793,36.61168836568063],
+  [52.44694261887793,36.61168836568063],
+  [52.44694261887793,36.17836425046897]
+  ]
+  
+var roi = ee.Geometry.Polygon(cor);
+
+Map.centerObject(roi);
+
+
+var time_start = '2010' , time_end = '2020' 
+
+var pr = imageCollection
+.filterDate(time_start, time_end);
+
+function pr_class(img){
+  var pr_mean = img.reduceRegion({
+    reducer: ee.Reducer.mean(), geometry: roi, scale: 27000
+    }).values().get(0);
+    var pr_max = img.reduceRegion({
+    reducer: ee.Reducer.max(), geometry: roi, scale: 27000
+    }).values().get(0);
+  return img
+  .copyProperties(img, img.propertyNames())
+  .set('pr_mean', pr_mean)
+  .set('pr_max', pr_max)
+  }
+
+var pr_values = pr.map(pr_class);
+
+var dry = pr_values
+.filter(ee.Filter.lt('pr_mean',0.5));
+
+print(
+  ui.Chart.image.series(dry, roi, ee.Reducer.mean(), 
+  27000, 'system:time_start').setChartType('ColumnChart')
+  )
+
+var wet = pr_values.filter(ee.Filter.gt('pr_mean',1));
+
+print(
+  ui.Chart.image.series(wet, roi, ee.Reducer.mean(),
+  270000, 'system:time_start').setChartType('ColumnChart')
+  )
+
+var mid = pr_values
+.filter(ee.Filter.gte('pr_mean',0.5))
+.filter(ee.Filter.lte('pr_mean', 1));
+
+print(mid.aggregate_array('pr_mean'))
+
