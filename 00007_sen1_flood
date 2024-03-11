@@ -1,0 +1,66 @@
+
+var cor = [
+  [54.07394733345745,36.81321992370517],
+  [54.79904498970745,36.81321992370517],
+  [54.79904498970745,37.45259869689526],
+  [54.07394733345745,37.45259869689526],
+  [54.07394733345745,36.81321992370517]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+Map.centerObject(roi);
+
+var year_start = '2019', year_end = '2020'
+
+function speckel(img){
+  return img.focalMedian(100, 'square', 'meters')
+  .copyProperties(img, img.propertyNames())
+  }
+
+var after = ee.ImageCollection("COPERNICUS/S1_GRD")
+.filterBounds(roi)
+.filterDate(year_start, year_end)
+.filter(ee.Filter.calendarRange(3, 3, 'month'))
+.filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+.filter(ee.Filter.eq('instrumentMode', 'IW'))
+.select('VV')
+.map(speckel)
+.min();
+
+Map.addLayer(after.clip(roi),[],'after', false);
+
+
+var before = ee.ImageCollection("COPERNICUS/S1_GRD")
+.filterBounds(roi)
+.filterDate(year_start, year_end)
+.filter(ee.Filter.calendarRange(2,2,'month'))
+.filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+.filter(ee.Filter.eq('instrumentMode', 'IW'))
+.select('VV')
+.map(speckel)
+.min();
+
+Map.addLayer(before.clip(roi),[],'before', false)
+
+
+var change = before.subtract(after).rename('flood')
+
+Map.addLayer(change.clip(roi),[],'flood', false)
+
+
+print(
+  ui.Chart.image.histogram(change, roi, 30)
+  )
+  
+Map.addLayer(change.gt(7).clip(roi),[],'flood_thr', false) 
+
+
+var flood_thr = change.gt(7);
+var flood_mask = flood_thr.updateMask(flood_thr);
+var flood_area = flood_mask.multiply(ee.Image.pixelArea().divide(1e6));
+var area_sum = flood_area.reduceRegion({
+  reducer: ee.Reducer.sum(), geometry: roi, scale: 100
+  }).values().get(0);
+  
+print(ee.Number(area_sum).round())
