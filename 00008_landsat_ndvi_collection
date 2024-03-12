@@ -1,0 +1,122 @@
+
+
+var cor = [
+  [48.62559911358055,31.65418476680761],
+  [48.91124364483055,31.65418476680761],
+  [48.91124364483055,31.885355756064595],
+  [48.62559911358055,31.885355756064595],
+  [48.62559911358055,31.65418476680761]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+Map.centerObject(roi)
+
+function ndvi_tm_etm(img){
+  var bands = img.multiply(0.0000275).add(-0.2);
+  var ndvi = bands.normalizedDifference(['SR_B4','SR_B3']).rename('ndvi')
+  return ndvi
+  .copyProperties(img, img.propertyNames())
+  }
+
+var landsat4 = ee.ImageCollection("LANDSAT/LT04/C02/T1_L2")
+.select('SR_B.*')
+.filterDate('1982','1994')
+.filterBounds(roi)
+.filter(ee.Filter.lt('CLOUD_COVER',45))
+.filter(ee.Filter.eq('WRS_PATH', 165))
+.filter(ee.Filter.eq('WRS_ROW', 38))
+.map(ndvi_tm_etm);
+
+
+var landsat5 = ee.ImageCollection("LANDSAT/LT05/C02/T1_L2")
+.select('SR_B.*')
+.filterDate('1984','2013')
+.filterBounds(roi)
+.filter(ee.Filter.lt('CLOUD_COVER',45))
+.filter(ee.Filter.eq('WRS_PATH', 165))
+.filter(ee.Filter.eq('WRS_ROW', 38))
+.map(ndvi_tm_etm);
+
+
+var landsat7_slcon = ee.ImageCollection("LANDSAT/LE07/C02/T1_L2")
+.select('SR_B.*')
+.filterDate('1999','2003-05-30')
+.filterBounds(roi)
+.filter(ee.Filter.lt('CLOUD_COVER',45))
+.filter(ee.Filter.eq('WRS_PATH', 165))
+.filter(ee.Filter.eq('WRS_ROW', 38))
+.map(ndvi_tm_etm);
+
+function slc_off(img){
+  var bands = img.multiply(0.0000275).add(-0.2);
+  var ndvi = bands.normalizedDifference(['SR_B4','SR_B3']).rename('ndvi')
+  var filter = ndvi.focalMedian(1, 'square', 'pixels',10);
+  var filled = filter.blend(ndvi).rename('ndvi')
+  return filled
+  .copyProperties(img, img.propertyNames())
+  }
+
+var landsat7_slcoff = ee.ImageCollection("LANDSAT/LE07/C02/T1_L2")
+.select('SR_B.*')
+.filterDate('2003-06-01','2024')
+.filterBounds(roi)
+.filter(ee.Filter.lt('CLOUD_COVER',45))
+.filter(ee.Filter.eq('WRS_PATH', 165))
+.filter(ee.Filter.eq('WRS_ROW', 38))
+.map(slc_off);
+
+
+Map.addLayer(landsat7_slcoff.filterDate('2005','2006').toBands().clip(roi),[],'slc_off_filled', false)
+
+function ndvi_oli(img){
+  var bands = img.multiply(0.0000275).add(-0.2);
+  var ndvi = bands.normalizedDifference(['SR_B5','SR_B4']).rename('ndvi')
+  return ndvi
+  .copyProperties(img, img.propertyNames())
+  }
+
+var landsat8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.select('SR_B.*')
+.filterDate('2013','2024')
+.filterBounds(roi)
+.filter(ee.Filter.lt('CLOUD_COVER',45))
+.filter(ee.Filter.eq('WRS_PATH', 165))
+.filter(ee.Filter.eq('WRS_ROW', 38))
+.map(ndvi_oli);
+
+
+var landsat9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+.select('SR_B.*')
+.filterDate('2021','2024')
+.filterBounds(roi)
+.filter(ee.Filter.lt('CLOUD_COVER',45))
+.filter(ee.Filter.eq('WRS_PATH', 165))
+.filter(ee.Filter.eq('WRS_ROW', 38))
+.map(ndvi_oli);
+
+
+
+var landsat_collections = landsat4.merge(landsat5)
+.merge(landsat7_slcon).merge(landsat7_slcoff).merge(landsat8).merge(landsat9)
+.sort('system:time_start');
+
+print(
+  ui.Chart.image.series(landsat_collections, 
+  roi, ee.Reducer.mean(), 100, 'system:time_start')
+  )
+
+
+Export.image.toDrive({
+  image: landsat_collections
+  .filterDate('2010','2011').toBands().clip(roi).float(),
+  description: 'landsat2010', 
+  scale: 30, 
+  crs: 'EPSG:4326',
+  maxPixels: 1e13,
+  region: roi,
+  folder: 'test'
+  
+  })
+
+
