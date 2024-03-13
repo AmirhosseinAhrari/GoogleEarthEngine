@@ -1,0 +1,57 @@
+
+
+var cor = [
+  [44.12939360774617,24.119400388422655],
+  [64.87158110774617,24.119400388422655],
+  [64.87158110774617,39.70103164846671],
+  [44.12939360774617,39.70103164846671],
+  [44.12939360774617,24.119400388422655]
+  ]
+  
+var roi = ee.Geometry.Polygon(cor)
+
+Map.centerObject(roi);
+
+var modis = ee.ImageCollection("MODIS/061/MOD13A2")
+.select('NDVI')
+.filterDate('2001','2021');
+
+function ndvi_time(img){
+  var time = img.metadata('system:time_start').divide(1e9);
+  return img.addBands(time)
+  .copyProperties(img, img.propertyNames())
+  }
+  
+var modis_time = modis.map(ndvi_time);
+
+var linear_reg = modis_time.select('system:time_start','NDVI')
+.reduce(ee.Reducer.linearFit()).select('scale');
+
+Map.addLayer(linear_reg.clip(roi),{palette:['red','black','green']},'linear_reg',false)
+
+
+var sen_slope = modis_time.select('system:time_start','NDVI')
+.reduce(ee.Reducer.sensSlope()).select('slope');
+
+Map.addLayer(sen_slope.clip(roi),{palette:['red','black','green']},'sens_slope',false)
+
+Export.image.toDrive({
+  image: sen_slope.clip(roi),
+  description: 'sen_slope',
+  scale: 1000,
+  region: roi,
+  maxPixels: 1e13,
+  crs: 'EPSG:4326'
+  })
+
+var mannkendall = modis_time.select('NDVI')
+.reduce(ee.Reducer.kendallsCorrelation());
+
+Map.addLayer(mannkendall.select('NDVI_tau').clip(roi),{palette:['red','black','green']},'mannkendall',false)
+
+var forma = modis_time.select('NDVI')
+.formaTrend()
+
+Map.addLayer(forma.clip(roi),[],'forma',false)
+
+
