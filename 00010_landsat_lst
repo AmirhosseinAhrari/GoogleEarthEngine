@@ -1,0 +1,105 @@
+
+
+var cor = [
+  [51.02815260405151,35.50852818710441],
+  [51.69282545561401,35.50852818710441],
+  [51.69282545561401,35.8988380759623],
+  [51.02815260405151,35.8988380759623],
+  [51.02815260405151,35.50852818710441]
+  ]
+  
+var roi = ee.Geometry.Polygon(cor)
+
+Map.centerObject(roi);
+
+var lan4 = ee.ImageCollection("LANDSAT/LT04/C02/T1_L2")
+.select(['ST_B6'],['LST'])
+.filterDate('1982','1994')
+.filterBounds(roi)
+.filter(ee.Filter.eq('WRS_PATH', 164)) // 164, 165
+.filter(ee.Filter.eq('WRS_ROW', 35)); // 35, 36
+
+// print(lan4)
+
+// print('landsat frames paths',lan4.aggregate_array('WRS_PATH').distinct())
+// print('landsat frames rows',lan4.aggregate_array('WRS_ROW').distinct())
+
+// Map.addLayer(lan4,[],'landsat_test',false)
+
+var lan5 = ee.ImageCollection("LANDSAT/LT05/C02/T1_L2")
+.select(['ST_B6'],['LST'])
+.filterDate('1984','2013')
+.filterBounds(roi)
+.filter(ee.Filter.eq('WRS_PATH', 164))
+.filter(ee.Filter.eq('WRS_ROW', 35));
+
+var lan7_slcon = ee.ImageCollection("LANDSAT/LE07/C02/T1_L2") 
+.select(['ST_B6'],['LST'])
+.filterDate('1999','2003-05-29')
+.filterBounds(roi)
+.filter(ee.Filter.eq('WRS_PATH', 164))
+.filter(ee.Filter.eq('WRS_ROW', 35));
+
+var lan7_slcoff = ee.ImageCollection("LANDSAT/LE07/C02/T1_L2")
+.select(['ST_B6'],['LST'])
+.filterDate('2003-05-30','2024')
+.filterBounds(roi)
+.filter(ee.Filter.eq('WRS_PATH', 164))
+.filter(ee.Filter.eq('WRS_ROW', 35))
+.map(function(img){
+  var filter = img.focalMedian(1, 'square', 'pixels', 3);
+  var fill = filter.blend(img)
+  return fill
+  .copyProperties(img, img.propertyNames())
+  });
+
+Map.addLayer(lan7_slcoff.first(),[],'slc_off', false)
+
+var lan8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.select(['ST_B10'],['LST'])
+.filterDate('2013','2024')
+.filterBounds(roi)
+.filter(ee.Filter.eq('WRS_PATH', 164))
+.filter(ee.Filter.eq('WRS_ROW', 35));
+
+var lan9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+.select(['ST_B10'],['LST'])
+.filterDate('2022','2024')
+.filterBounds(roi)
+.filter(ee.Filter.eq('WRS_PATH', 164))
+.filter(ee.Filter.eq('WRS_ROW', 35));
+
+
+var collection = lan4.merge(lan5).merge(lan7_slcon).merge(lan7_slcoff)
+.merge(lan8).merge(lan9).sort('system:time_start')
+.filter(ee.Filter.lt('CLOUD_COVER',45));
+
+var lst_col = collection.map(function(img){
+  var kel = img.multiply(0.00341802).add(149).rename('LST_Kel');
+  var cel = kel.subtract(273.15).rename('LST_Cel');
+  return kel.addBands(cel)
+  .copyProperties(img, img.propertyNames())
+  });
+  
+print(
+  ui.Chart.image.series(lst_col.select('LST_Kel'),
+  roi, ee.Reducer.mean(), 100, 'system:time_start')
+  )
+
+print(
+  ui.Chart.image.series(lst_col.select('LST_Cel'),
+  roi, ee.Reducer.mean(), 100, 'system:time_start')
+  )
+
+Export.image.toDrive({
+  image: lst_col.select('LST_Cel').filterDate('2019','2020').toBands().clip(roi),
+  description: 'lst_cel', 
+  scale: 100, 
+  region: roi,
+  maxPixels: 1e13,
+  crs: 'EPSG:4326',
+  folder: 'landsat'
+  
+  })
+
+
