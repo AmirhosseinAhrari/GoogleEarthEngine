@@ -1,0 +1,52 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [43.89239103939352,35.313917425058115],
+  [49.165828539393516,35.313917425058115],
+  [49.165828539393516,39.29702833107737],
+  [43.89239103939352,39.29702833107737],
+  [43.89239103939352,35.313917425058115]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+Map.centerObject(roi);
+
+var modis = ee.ImageCollection("MODIS/061/MCD12Q1")
+.select('LC_Type1').mode();
+
+var igbpLandCoverVis = {
+  min: 1.0,
+  max: 17.0,
+  palette: [
+    '05450a', '086a10', '54a708', '78d203', '009900', 'c6b044', 'dcd159',
+    'dade48', 'fbff13', 'b6ff05', '27ff87', 'c24f44', 'a5a5a5', 'ff6d4c',
+    '69fff8', 'f9ffa4', '1c0dff'
+  ],
+};
+
+Map.addLayer(modis.clip(roi),igbpLandCoverVis,'modis_lc',false);
+
+print(
+  ui.Chart.image.histogram(modis,roi,500)
+  )
+  
+  
+var modis_area = ee.Image.pixelArea().divide(1e6).addBands(modis);
+
+print(
+  ui.Chart.image.byClass(modis_area, 'LC_Type1',
+  roi, ee.Reducer.sum(), 500)
+  )  
+  
+  
+  
