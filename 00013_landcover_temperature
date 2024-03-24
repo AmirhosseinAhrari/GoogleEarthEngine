@@ -1,0 +1,86 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor = [
+  [51.72646131195613,35.78622502387334],
+  [54.07753553070613,35.78622502387334],
+  [54.07753553070613,36.97144246810686],
+  [51.72646131195613,36.97144246810686],
+  [51.72646131195613,35.78622502387334]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+Map.centerObject(roi);
+
+var lc = ee.ImageCollection("MODIS/061/MCD12Q1")
+.mode().select('LC_Type1');
+
+var vis = {
+  min: 1.0,
+  max: 17.0,
+  palette: [
+    '05450a', '086a10', '54a708', '78d203', '009900', 'c6b044', 'dcd159',
+    'dade48', 'fbff13', 'b6ff05', '27ff87', 'c24f44', 'a5a5a5', 'ff6d4c',
+    '69fff8', 'f9ffa4', '1c0dff'
+  ],
+};
+
+Map.addLayer(lc.clip(roi),vis,'map',false)
+
+var water_thr = lc.eq(17);
+
+Map.addLayer(water_thr.clip(roi),[],'water_thr',false)
+
+var water_mask = water_thr.updateMask(water_thr)
+
+Map.addLayer(water_mask.clip(roi),[],'water_mask', false)
+
+var water_vector = water_mask.reduceToVectors({
+  geometry: roi, scale: 500
+  }).union(1)
+
+Map.addLayer(water_vector,[],'water_vector',false)
+
+var temp = ee.ImageCollection("MODIS/061/MOD11A2")
+.select('LST_Day_1km')
+.filterDate('2001','2024')
+.map(function(img){
+  return img.multiply(0.02).subtract(273.15)
+  .copyProperties(img, img.propertyNames())
+  })
+  
+print(
+  ui.Chart.image.series(temp, water_vector, 
+  ee.Reducer.mean(), 500, 'system:time_start')
+  )
+
+
+
+function urban_layer(img){
+  var urban_thr = img.eq(13);
+  var urban_mask = urban_thr.updateMask(urban_thr);
+  var urban_vector = urban_mask.reduceToVectors({
+    geometry: roi, scale: 500
+    }).union(1);
+  return urban_vector
+  }
+  
+var urban_class = urban_layer(lc);
+
+print(
+  ui.Chart.image.series(temp, urban_class,
+  ee.Reducer.mean(), 500, 'system:time_start')
+  )
+
+
+
