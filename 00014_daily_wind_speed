@@ -1,0 +1,74 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+
+var cor = [
+  [52.24091120672926,28.94538993989301],
+  [59.00848933172926,28.94538993989301],
+  [59.00848933172926,33.89295282767506],
+  [52.24091120672926,33.89295282767506],
+  [52.24091120672926,28.94538993989301]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+var era5 = ee.ImageCollection("ECMWF/ERA5/DAILY")
+.select('u_.*','v_.*')
+.filterDate('2010','2024');
+
+var windspeed = era5.map(function(img){
+  var eq = img.expression('sqrt((u**2)+(v**2))',{
+    'u': img.select('u_.*'), 'v': img.select('v_.*')
+    }).rename('wind_speed');
+    return eq
+    .copyProperties(img, img.propertyNames())
+  });
+  
+print(
+  ui.Chart.image.series(windspeed, roi, ee.Reducer.mean(),
+  27000, 'system:time_start')
+  )
+  
+  
+
+var wind40 = ee.ImageCollection("ECMWF/ERA5/DAILY")
+.filterDate('1980','2020');
+
+var windspeed40 = wind40.map(function(img){
+  var eq = img.expression('sqrt((u**2)+(v**2))',{
+    'u': img.select('u_.*'), 'v': img.select('v_.*')
+    }).rename('wind_speed');
+    return eq
+    .copyProperties(img, img.propertyNames())
+  });
+
+function get_value(img){
+  var date = ee.Date(ee.Image(img).get('system:time_start')).format().slice(0,10);
+  var value = ee.Number(ee.Image(img).reduceRegion({
+    reducer: ee.Reducer.mean(), geometry: roi, scale: 27000
+    }).values().get(0))
+  return [date, value]
+  }
+  
+var size = windspeed40.size();
+var windlist = windspeed40.toList(size).map(get_value);
+
+var wind_feature = ee.FeatureCollection(windlist.map(function(el){
+  el = ee.List(el);
+  return ee.Feature(null, {'date': ee.String(el.get(0)), 'windspeed': ee.String(el.get(1))})
+  }));
+  
+Export.table.toDrive({
+  collection: wind_feature, description: 'windspeed40', fileFormat: 'CSV'
+  })
+
