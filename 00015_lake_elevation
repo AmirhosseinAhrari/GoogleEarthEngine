@@ -1,0 +1,95 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor = [
+  [44.86557382828752,37.08659871132482],
+  [46.08505625016252,37.08659871132482],
+  [46.08505625016252,38.34669285754838],
+  [44.86557382828752,38.34669285754838],
+  [44.86557382828752,37.08659871132482]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+Map.centerObject(roi)
+
+var modis2001 = ee.ImageCollection("MODIS/061/MOD09Q1")
+.select('sur.*')
+.filterDate('2001','2002')
+.map(function(img){
+  var band = img.multiply(0.0001);
+  var ndwi = band.normalizedDifference(['sur_refl_b01','sur_refl_b02']).rename('ndwi');
+  return ndwi
+  }).median();
+  
+Map.addLayer(modis2001.clip(roi),[],'ndwi_2001', false)  
+
+print(
+  ui.Chart.image.histogram(modis2001,roi,250)
+  )
+  
+var thr = modis2001.gt(0.1);
+
+Map.addLayer(thr.clip(roi),[],'lake_thr', false)
+
+var mask2001 = thr.updateMask(thr);
+
+Map.addLayer(mask2001.clip(roi),[],'mask2001',false)
+
+var vector2001 = mask2001.reduceToVectors({
+  geometry: roi, scale: 250
+  });
+  
+Map.addLayer(vector2001,[],'lake2001', false)
+
+var dem = ee.ImageCollection("JAXA/ALOS/AW3D30/V3_2")
+.mean().select('DSM')
+
+Map.addLayer(dem,[],'dem',false)
+
+
+var lake_elevation_2001 = ee.Number(dem.reduceRegion({
+  reducer: ee.Reducer.percentile([55]), geometry:vector2001, scale: 250
+  }).values().get(0));
+  
+print('lake elevation for 2001', lake_elevation_2001)
+
+
+Export.table.toDrive({
+  collection: vector2001, description: 'lake2001', folder: 'lake_border', fileFormat: 'SHP'
+  })
+
+
+var modis2023 = ee.ImageCollection("MODIS/061/MOD09Q1")
+.select('sur.*')
+.filterDate('2023','2024')
+.map(function(img){
+  var band = img.multiply(0.0001);
+  var ndwi = band.normalizedDifference(['sur_refl_b01','sur_refl_b02']).rename('ndwi');
+  return ndwi
+  }).median();
+
+var thr2 = modis2023.gt(0.1);
+var mask2023 = thr2.updateMask(thr2);
+
+var vector2023 = mask2023.reduceToVectors({
+  geometry: roi, scale: 250
+  });
+
+Map.addLayer(vector2023,[],'lake2023', false)
+
+var lake_elevation_2023 = ee.Number(dem.reduceRegion({
+  reducer: ee.Reducer.percentile([55]), geometry:vector2023, scale: 250
+  }).values().get(0));
+  
+print('lake elevation for 2023', lake_elevation_2023)
