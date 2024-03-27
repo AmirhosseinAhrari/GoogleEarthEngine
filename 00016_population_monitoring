@@ -1,0 +1,31 @@
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+
+var cor = [49.648641123960516,37.29255382495616]
+
+var loc = ee.Geometry.MultiPoint(cor)
+
+var roi = table.filterBounds(loc);
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var pop = ee.ImageCollection("JRC/GHSL/P2023A/GHS_POP")
+
+Map.addLayer(pop.toBands().clip(roi),[],'pop',false)
+
+print(
+  ui.Chart.image.series(pop, roi, ee.Reducer.sum(),
+  100, 'system:time_start')
+  )
+
+
