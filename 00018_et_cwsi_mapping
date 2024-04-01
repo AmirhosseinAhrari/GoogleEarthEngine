@@ -1,0 +1,85 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [46.00719637247596,37.199483887704204]
+
+var loc = ee.Geometry.Point(cor)
+
+
+var roi = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_5")
+.filterBounds(loc);
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+// call modis et product 
+
+var time_start = '2001', time_end = '2024'
+
+var modis = ee.ImageCollection("MODIS/061/MOD16A2GF")
+.select('ET','PET')
+.filterDate(time_start, time_end);
+
+// et mapping
+
+var et_mean = modis.select('ET').mean().multiply(0.1);
+
+Map.addLayer(et_mean.clip(roi),[],'et_mean',false)
+
+var et_mean_summer = modis.select('ET')
+.filter(ee.Filter.calendarRange(6, 8, 'month')).mean().multiply(0.1);
+
+Map.addLayer(et_mean_summer.clip(roi),[],'et_summer',false)
+
+// get export
+
+Export.image.toDrive({
+  image: et_mean.clip(roi), 
+  description: 'et_mean', 
+  region: roi, 
+  scale: 500,
+  crs: et_mean.getInfo().crs,
+  maxPixels: 1e13,
+  folder: 'evapotranspiration'
+  
+  })
+  
+// crop water stress index eq = 1 - (et/pet)
+
+
+var cwsi = modis.map(function(img){
+  var eq = img.expression('1 - (et/pet)',{'et': img.select('ET').multiply(0.1), 'pet': img.select('PET').multiply(0.1)});
+  return eq.rename('cwsi')
+  .copyProperties(img, ['system:time_start', 'system:time_end'])
+  });
+  
+  
+var cwsi_mean = cwsi.mean();
+
+Map.addLayer(cwsi_mean.clip(roi),[],'cwsi_mean',false)
+
+
+// masking process
+
+var lc =  ee.ImageCollection("MODIS/061/MCD12Q1")
+.select('LC_Type1').mode();
+
+var crop = lc.eq(12);
+
+Map.addLayer(crop.clip(roi),[],'crop',false)
+
+var cwsi_crop = cwsi_mean.updateMask(crop);
+
+Map.addLayer(cwsi_crop.clip(roi),[],'cwsi_mean_crop',false)
+
+
+
+
