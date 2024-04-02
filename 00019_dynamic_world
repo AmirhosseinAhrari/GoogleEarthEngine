@@ -1,0 +1,86 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [49.349581955929196,37.390543498162955]
+
+var loc = ee.Geometry.Point(cor)
+
+
+var roi = ee.FeatureCollection("FAO/GAUL/2015/level1")
+.filterBounds(loc);
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+// call landcover image
+
+var map = ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
+.filterDate('2023','2024')
+.filter(ee.Filter.calendarRange(1,12, 'month'))
+.filterBounds(roi);
+
+// simplest approach
+
+var annual_map = map.select('label').mode();
+
+var VIS_PALETTE = [
+    '419bdf', '397d49', '88b053', '7a87c6', 'e49635', 'dfc35a', 'c4281b',
+    'a59b8f', 'b39fe1'];
+
+Map.addLayer(annual_map.clip(roi),{min: 0, max: 8, palette: VIS_PALETTE}, 'map2013', false)
+
+
+Export.image.toDrive({
+  image: annual_map.clip(roi),
+  description: 'annual_map',
+  scale: 30,
+  maxPixels: 1e13, 
+  region: roi,
+  crs: annual_map.getInfo().crs
+  })
+
+
+// temporal collection function
+
+function temporal_collection(collection, start, count, interval, unit){
+  var seq = ee.List.sequence(0, ee.Number(count).subtract(1));
+  var origin_date = ee.Date(start);
+  return ee.ImageCollection(seq.map(function(i){
+    var start_date = origin_date.advance(ee.Number(interval).multiply(i), unit);
+    var end_date = origin_date.advance(ee.Number(interval).multiply(ee.Number(i).add(1)), unit);
+    return collection.filterDate(start_date, end_date).mode()
+    .set('system:time_start', start_date.millis())
+    .set('system:time_end', end_date.millis())
+    }))
+  }
+  
+var monthly = temporal_collection(map.select('label'), '2023', 12, 1, 'month');
+
+Map.addLayer(monthly.toBands().clip(roi),[],'monthly_map', false)
+
+var monthly_updated = monthly.map(function(img){
+  var date = img.date().format('YYYY-MM-dd');
+  return img.rename(date)
+  
+  })
+
+print(monthly_updated.toBands())
+
+Export.image.toDrive({
+  image: monthly_updated.toBands().clip(roi),
+  description: 'monthly_lc',
+  scale: 30, 
+  maxPixels: 1e13,
+  region: roi,
+  crs: monthly_updated.toBands().getInfo().crs
+  })
+
+
