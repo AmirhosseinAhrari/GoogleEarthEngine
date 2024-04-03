@@ -1,0 +1,72 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor = [
+  [48.69819149851601,29.554928660523107],
+  [49.91767392039101,29.554928660523107],
+  [49.91767392039101,30.671567766536796],
+  [48.69819149851601,30.671567766536796],
+  [48.69819149851601,29.554928660523107]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+Map.centerObject(roi);
+
+// sentinel-2 images 
+
+var sen = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+.select(['B[2-4]','B8'])
+.filterDate('2023','2024')
+.filterBounds(roi)
+.filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
+.median().multiply(0.0001);
+
+Map.addLayer(sen.clip(roi),
+      {bands:['B8','B4','B3']},'false color', false)
+
+var ndwi = sen.normalizedDifference(['B3','B8']).rename('ndwi');
+
+Map.addLayer(ndwi.clip(roi),[],'ndwi',false);
+
+print(
+  ui.Chart.image.histogram(ndwi,roi,100)
+  )
+  
+var thr = ndwi.gt(0.1);
+
+Map.addLayer(thr.clip(roi),[],'thr',false)
+
+
+var sen_mask = sen.updateMask(thr);
+
+Map.addLayer(sen_mask.clip(roi),[],'sen_mask',false)
+
+var ndti = sen_mask.normalizedDifference(['B4','B3']).rename('ndti')
+
+Map.addLayer(ndti.clip(roi),{
+  palette: ['blue','green','yellow','orange','red']
+  }, 'ndti', false)
+
+
+Export.image.toDrive({
+  image: ndti.clip(roi),
+  description: 'sen2_ndti',
+  region: roi,
+  scale: 10,
+  crs: ndti.getInfo().crs,
+  maxPixels: 1e13,
+  folder: 'test'
+  })
+
+
