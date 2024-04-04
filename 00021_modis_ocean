@@ -1,0 +1,87 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [47.419838040569594,22.380471998506263],
+  [62.097572415569594,22.380471998506263],
+  [62.097572415569594,31.043444259430704],
+  [47.419838040569594,31.043444259430704],
+  [47.419838040569594,22.380471998506263]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+// call modis ocean product
+
+var modis = ee.ImageCollection("NASA/OCEANDATA/MODIS-Terra/L3SMI")
+.filterDate('2020','2022');
+
+// mapping for bands 
+
+var chl = modis.mean().select('chlor_a');
+
+Map.addLayer(chl.clip(roi), [], 'chl', false)
+
+var phyto = modis.mean().select('nflh');
+
+Map.addLayer(phyto.clip(roi),[],'phyto', false)
+
+var poc = modis.mean().select('poc');
+
+Map.addLayer(poc.clip(roi),[],'poc',false)
+
+// stack raster layers
+
+var sst = modis.select('sst')
+.filter(ee.Filter.calendarRange(1,1,'month'));
+
+var sst_stack = sst.toBands();
+
+Map.addLayer(sst_stack.clip(roi),[],'sst_stack', false)
+
+
+Export.image.toDrive({
+  image: sst_stack.clip(roi),
+  description: 'sst_modis',
+  scale: 5000,
+  region: roi,
+  crs: 'EPSG:4326',
+  maxPixels: 1e13,
+  folder: 'test'
+  })
+
+
+// temporal collection
+
+function temporal_collection(collection, start, count, interval, unit){
+  var seq = ee.List.sequence(0, ee.Number(count).subtract(1));
+  var origin_date = ee.Date(start);
+  return ee.ImageCollection(seq.map(function(i){
+    var start_date = origin_date.advance(ee.Number(interval).multiply(i), unit);
+    var end_date = origin_date.advance(ee.Number(interval).multiply(ee.Number(i).add(1)), unit);
+    return collection.filterDate(start_date, end_date).mean()
+    .set('system:time_start', start_date.millis())
+    .set('system:time_end', end_date.millis())
+    }))
+  }
+  
+  
+var weekly = temporal_collection(modis, '2020', 104, 1, 'week');
+
+print(
+  ui.Chart.image.series(weekly.select('chlor_a'), roi, ee.Reducer.mean(),
+  5000, 'system:time_start')
+  )
+
+print(
+  ui.Chart.image.series(weekly.select('sst'), roi, ee.Reducer.mean(),
+  5000, 'system:time_start')
+  )
