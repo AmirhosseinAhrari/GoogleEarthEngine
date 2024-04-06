@@ -1,0 +1,86 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor  = [
+  [50.87050198728251,35.44558510822678],
+  [51.70546292478251,35.44558510822678],
+  [51.70546292478251,35.98746896328614],
+  [50.87050198728251,35.98746896328614],
+  [50.87050198728251,35.44558510822678]
+  ]
+
+var roi = ee.Geometry.MultiPolygon(cor)
+
+
+Map.centerObject(roi);
+
+// call the gshl product 
+
+var ghsl = ee.ImageCollection("JRC/GHSL/P2023A/GHS_BUILT_S")
+.select(['built_surface'])
+.filterBounds(roi);
+
+// visualization
+
+Map.addLayer(ghsl.toBands().clip(roi),[],'ghsl',false)
+
+// make a single layer for bands
+
+var stack = ghsl.toBands();
+
+// export the stack layer
+
+Export.image.toDrive({
+  image: stack.clip(roi).float(),
+  description: 'urban_stack',
+  region: roi,
+  scale: 100,
+  maxPixels: 1e13,
+  folder: 'test',
+  crs: stack.getInfo().crs
+  })
+  
+// calculate the area of residential pixels
+
+
+var urban1975 = ghsl.filter(ee.Filter.eq('system:index', '1975')).toBands();
+
+var area1975 = ee.Number(urban1975.reduceRegion({
+  reducer: ee.Reducer.sum(), geometry: roi, scale: 100
+  }).values().get(0));
+  
+print('residential area 1975 (km2):', ee.Number(area1975).divide(1e6))
+
+
+var urban2020 = ghsl.filter(ee.Filter.eq('system:index', '2020')).toBands();
+
+var area2020 = ee.Number(urban2020.reduceRegion({
+  reducer: ee.Reducer.sum(), geometry: roi, scale: 100
+  }).values().get(0));
+  
+print('residential area 2020 (km2):', ee.Number(area2020).divide(1e6))
+
+
+// calculate the are for all years
+
+var ghsl2 = ghsl.map(function(img){
+  return img.divide(1e6)
+  .copyProperties(img, img.propertyNames())
+  })
+
+print(
+  ui.Chart.image.series(ghsl2, roi, ee.Reducer.sum(), 100, 'system:time_start')
+  .setChartType('ColumnChart')
+  )
+
+
+
