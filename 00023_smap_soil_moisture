@@ -1,0 +1,91 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var fao = ee.FeatureCollection("FAO/GAUL/2015/level0")
+
+
+var cor1 = [52.57063162600449,34.17766271003876]
+
+var cor2 = [49.67024100100449,37.28054901678059]
+
+
+var roi1 = fao.filterBounds(ee.Geometry.Point(cor1));
+
+var roi2 = ee.Geometry.Point(cor2)
+
+var sm = ee.ImageCollection("NASA/SMAP/SPL3SMP_E/005")
+.select(['soil_moisture_am'])
+.filterDate('2020','2024');
+
+var sm_mean = sm.median();
+
+Map.addLayer(sm_mean.clip(roi1),{palette: ['0300ff', '418504', 'efff07', 'efff07', 'ff0303']},
+        'sm_mean',false)
+
+Export.image.toDrive({
+  image: sm_mean, 
+  description: 'soil_moisture_mean', 
+  scale: 9000,
+  region: roi1,
+  crs: sm_mean.getInfo().crs,
+  maxPixels: 1e13,
+  folder: 'soil_moisture'
+  })
+  
+
+print(
+  ui.Chart.image.series(sm, roi2, ee.Reducer.first(), 9000, 'system:time_start')
+  )
+  
+  
+  
+function temporal_collection(collection, start, count, interval, unit){
+  var seq = ee.List.sequence(0, ee.Number(count).subtract(1));
+  var origin_date = ee.Date(start);
+  return ee.ImageCollection(seq.map(function(i){
+    var start_date = origin_date.advance(ee.Number(interval).multiply(i), unit)
+    var end_date = origin_date.advance(ee.Number(interval).multiply(ee.Number(i).add(1)), unit)
+    return collection.filterDate(start_date, end_date).mean()
+    .set('system:time_start', start_date.millis())
+    .set('system:time_end', end_date.millis())
+    }))
+  }  
+  
+  
+var weekly = temporal_collection(sm, '2020', 208, 1, 'week')
+
+print(
+  ui.Chart.image.series(weekly, roi2, ee.Reducer.first(), 9000, 'system:time_start')
+  )
+
+// year = 52 weeks, 4 * 52 = 208
+// year = 12 months, 4 * 12 = 48
+
+var monthly = temporal_collection(sm, '2020', 48, 1, 'month');
+
+
+print(
+  ui.Chart.image.series(monthly, roi2, ee.Reducer.first(), 9000, 'system:time_start')
+  )
+
+
+var annual = temporal_collection(sm, '2020', 4, 1, 'year');
+
+
+print(
+  ui.Chart.image.series(annual, roi2, ee.Reducer.first(), 9000, 'system:time_start')
+  )
+
+  
+  
+  
+  
