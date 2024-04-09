@@ -1,0 +1,67 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [44.89140339357055,37.09921636762552],
+  [46.05595417482055,37.09921636762552],
+  [46.05595417482055,38.354790162350284],
+  [44.89140339357055,38.354790162350284],
+  [44.89140339357055,37.09921636762552]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+Map.centerObject(roi);
+Map.addLayer(roi)
+
+// call modis surface reflectance image
+
+var modis = ee.ImageCollection("MODIS/061/MOD09A1")
+.filterDate('2001','2023')
+.map(function(img){
+  var bands = img.select('sur_refl.*').multiply(0.0001);
+  var ndwi = bands.normalizedDifference(['sur_refl_b04','sur_refl_b02']).rename('ndwi');
+  return ndwi
+  .copyProperties(img, img.propertyNames())
+  });
+  
+Map.addLayer(modis.median().clip(roi),[],'modis',false);
+
+print(
+  ui.Chart.image.histogram(modis.median(),roi,500)
+  )
+
+// otsu function to find the accurate threshold
+
+
+var oeel=require('users/OEEL/lib:loadAll');
+
+var otsu = oeel.ImageCollection.OtsuThreshold(modis, 'ndwi');
+
+print(
+  ui.Chart.image.histogram(otsu,roi,500)
+  )
+  
+var thr  = ee.Number(otsu.reduceRegion({
+  reducer: ee.Reducer.mean(), geometry: roi, scale: 500
+  }).values().get(0));
+  
+  
+print('water body threshold',thr)
+
+
+// apply a threshold on image
+
+var ndwis = modis.filterDate('2020','2021').toBands().gt(thr);
+
+Map.addLayer(ndwis.clip(roi),[],'ndwi_thr',false)
+
