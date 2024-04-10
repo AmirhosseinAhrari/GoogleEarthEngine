@@ -1,0 +1,71 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor = [
+  [44.9080614872616,37.10065044621631],
+  [46.1220507450741,37.10065044621631],
+  [46.1220507450741,38.343276286611825],
+  [44.9080614872616,38.343276286611825],
+  [44.9080614872616,37.10065044621631]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+
+Map.centerObject(roi);
+
+// call modis surface reflectance 
+// calculate ndwi median for each date
+
+var mod2001 = ee.ImageCollection("MODIS/061/MOD09Q1")
+.filterDate('2001','2002')
+.map(function(img){
+  var bands = img.select('sur.*').multiply(0.0001);
+  var ndwi = bands.normalizedDifference(['sur_refl_b01','sur_refl_b02']).rename('ndwi');
+  return ndwi  
+  }).median().gt(0.1);
+  
+Map.addLayer(mod2001.clip(roi),[],'mod2001',false);
+
+var mod2023 = ee.ImageCollection("MODIS/061/MOD09Q1")
+.filterDate('2023','2024')
+.map(function(img){
+  var bands = img.select('sur.*').multiply(0.0001);
+  var ndwi = bands.normalizedDifference(['sur_refl_b01','sur_refl_b02']).rename('ndwi');
+  return ndwi  
+  }).median().gt(0.1);
+  
+Map.addLayer(mod2023.clip(roi),[],'mod2023',false);
+
+// change detection using subtraction
+
+var change = mod2001.subtract(mod2023);
+
+Map.addLayer(change.clip(roi),[],'coastline_change',false)
+
+// conversion from raster to layer
+
+var mask = change.updateMask(change);
+
+Map.addLayer(mask.clip(roi),[],'coastline_change_mask',false)
+
+var vector = mask.reduceToVectors({
+  geometry: roi, scale: 250
+  }).union(1);
+
+Map.addLayer(vector)
+
+// export 
+
+Export.table.toDrive({
+  collection: vector, description: 'coastline', fileFormat: 'SHP', folder: 'coastline_mapping'
+  })
