@@ -1,0 +1,111 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor1 = [52.08596517173183,26.6366657681643]
+
+var roi1 = ee.Geometry.Point(cor1)
+
+var loc1 = [52.08596517173183,26.6366657681643]
+var point1 = ee.Geometry.Point(loc1)
+
+var loc2 = [59.316594338671855,24.56401684163127]
+var point2 = ee.Geometry.Point(loc2)
+
+var roi2 = ee.FeatureCollection([
+  ee.Feature(point1), ee.Feature(point2)
+  ])
+
+var cor3 = [
+  [46.783471782570096,22.49779505791478],
+  [56.495385845070096,22.49779505791478],
+  [56.495385845070096,31.826657354551816],
+  [46.783471782570096,31.826657354551816],
+  [46.783471782570096,22.49779505791478]
+  ]
+
+var roi3 = ee.Geometry.Polygon(cor3)
+
+var salinity = ee.ImageCollection("HYCOM/sea_temp_salinity")
+.select('salinity_0')
+.filterDate('2010','2011')
+.filter(ee.Filter.calendarRange(1, 1, 'month'))
+.map(function(img){
+  var bands = img.multiply(0.001).add(20);
+  return bands
+  .copyProperties(img,img.propertyNames())
+  });
+
+var stack = salinity.toBands();
+
+Map.addLayer(stack,[],'salinity',false);
+
+Export.image.toDrive({
+  image: stack.clip(roi3),
+  description: 'persian_gulf_salinity',
+  scale: 9000,
+  region: roi3,
+  maxPixels: 1e13,
+  crs: stack.getInfo().crs,
+  folder: 'test'
+  
+  })
+
+
+var sal_persian_gulf = ee.ImageCollection("HYCOM/sea_temp_salinity")
+.select('salinity_0')
+.filterDate('2000','2005')
+//.filter(ee.Filter.calendarRange(1, 1, 'month'))
+.map(function(img){
+  var bands = img.multiply(0.001).add(20);
+  return bands
+  .copyProperties(img,img.propertyNames())
+  });
+  
+print(
+  ui.Chart.image.series(sal_persian_gulf, roi1, ee.Reducer.first(), 10000, 'system:time_start')
+  )
+
+print(
+  ui.Chart.image.seriesByRegion(sal_persian_gulf, roi2, ee.Reducer.first(),
+  'salinity_0', 9000, 'system:time_start', 'system:index')
+  )
+
+var salinity2 = ee.ImageCollection("HYCOM/sea_temp_salinity")
+.select('salinity_0')
+.filterDate('2000','2020')
+// .filter(ee.Filter.calendarRange(1, 1, 'month')) 20 * 12 = 240
+
+
+function temporal_collection(collection, start, count, interval, unit){
+  var seq = ee.List.sequence(0, ee.Number(count).subtract(1));
+  var origin_date = ee.Date(start);
+  return ee.ImageCollection(seq.map(function(i){
+    var start_date = origin_date.advance(ee.Number(interval).multiply(i), unit);
+    var end_date = origin_date.advance(ee.Number(interval).multiply(ee.Number(i).add(1)), unit);
+    return collection.filterDate(start_date, end_date).mean()
+    .set('system:time_start', start_date.millis())
+    .set('system:time_end', end_date.millis())
+    }))
+  }
+
+var monthly = temporal_collection(salinity2, '2000', 240, 1, 'month')
+.map(function(img){
+  var bands = img.multiply(0.001).add(20);
+  return bands.rename('SSS')
+  .copyProperties(img,img.propertyNames())
+  }); 
+
+print(
+  ui.Chart.image.series(monthly, roi1, ee.Reducer.first(), 10000, 'system:time_start')
+  )
+
+
+
