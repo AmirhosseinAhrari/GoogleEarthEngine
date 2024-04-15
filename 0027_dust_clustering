@@ -1,0 +1,67 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [20.991406249999986,25.507712481650202]
+
+var cor_algeria = [0.2309396803809749,26.77681610326222]
+var point_algeria = ee.Geometry.Point(cor_algeria)
+
+var cor_iran = [57.53562718038097,34.0452055133763]
+var point_iran = ee.Geometry.Point(cor_iran)
+
+var iran_algeria = ee.FeatureCollection([
+  ee.Feature(point_algeria), ee.Feature(point_iran)
+  ])
+
+var roi = ee.Geometry.Point(cor)
+
+var training_cor = [
+  [-150.30742187500002,-52.9982763366959],
+  [159.77070312499998,-52.9982763366959],
+  [159.77070312499998,72.87600964247707],
+  [-150.30742187500002,72.87600964247707],
+  [-150.30742187500002,-52.9982763366959]
+  ]
+
+var training_border = ee.Geometry.Polygon(training_cor)
+
+
+var aot = ee.ImageCollection("NASA/GSFC/MERRA/aer/2")
+.select('DUSCATAU')
+.filterDate('2023','2024')
+.filter(ee.Filter.calendarRange(12, 12, 'hour'));
+
+var aot_stack = aot.toBands();
+
+Map.addLayer(aot_stack,[],'aot_stack',false)
+
+print(
+  ui.Chart.image.series(aot, roi, ee.Reducer.first(), 50000, 'system:time_start')
+  )
+  
+print(
+  ui.Chart.image.seriesByRegion(aot, iran_algeria, ee.Reducer.first(),
+  'DUSCATAU', 50000, 'system:time_start', 'system:index')
+  )
+  
+// clustering
+
+var samples = aot_stack.sample({
+  region: training_border, scale: 50000, numPixels: 5000
+  });
+  
+var kmeans = ee.Clusterer.wekaKMeans(5).train(samples);
+
+var aot_map = aot_stack.cluster(kmeans);
+
+Map.addLayer(aot_map,{min: 0, max: 4, palette: ['white','yellow','orange','red','brown']},'aot_map',false)  
+  
+
