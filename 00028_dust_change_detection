@@ -1,0 +1,67 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [-18.177742170599114,-42.52013444761732],
+  [55.65038282940088,-42.52013444761732],
+  [55.65038282940088,41.278382650539754],
+  [-18.177742170599114,41.278382650539754],
+  [-18.177742170599114,-42.52013444761732]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+var aot = ee.ImageCollection("NASA/GSFC/MERRA/aer/2")
+.select('DUSCATAU')
+.filterDate('2020','2021')
+.filter(ee.Filter.calendarRange(12,12,'hour'));
+
+var aot_max = aot.max();
+
+Map.addLayer(aot_max,{palette:['black','red']},'aot_max',false)
+
+var cons = ee.Image.constant(0);
+
+var clear = cons.where(aot_max.lt(0.15),10)
+var moderate = clear.where(aot_max.gt(0.15).and((aot_max).lt(0.3)),20);
+var hazy = moderate.where(aot_max.gt(0.3).and(aot_max.lt(0.5)), 30)
+var very_hazy = hazy.where(aot_max.gt(0.5).and(aot_max.lt(8)), 40)
+
+Map.addLayer(very_hazy,{min: 10, max:40, palette:['black','yellow','orange','red']},'very_hazy',false)
+
+
+// frequency of dust events
+
+var freq = aot.map(function(img){
+  var thr = img.gt(0.5)
+  return thr
+  }).sum().divide(aot.size()).multiply(100);
+  
+Map.addLayer(freq,{palette:['black','yellow','orange','red']},'aot_freq',false)
+
+
+
+// trend analysis
+
+var aot_trend = aot.reduce(ee.Reducer.kendallsCorrelation());
+
+Map.addLayer(aot_trend.select('DUSCATAU_tau'),{palette:['black','yellow','orange','red']},'aot_trend',false)
+
+
+Export.image.toDrive({
+  image: aot_trend.select('DUSCATAU_tau'),
+  description: 'aot_kendall',
+  scale: 50000,
+  region: roi,
+  crs: aot_trend.getInfo().crs,
+  maxPixels: 1e13,
+  })
