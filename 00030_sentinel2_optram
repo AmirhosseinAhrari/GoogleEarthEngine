@@ -1,0 +1,122 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor1 = [
+   [45.779592977269836,36.1375555993027],
+   [47.28471993039483,36.1375555993027],
+   [47.28471993039483,37.221265803646695],
+   [45.779592977269836,37.221265803646695],
+   [45.779592977269836,36.1375555993027]
+  ]
+  
+var roi = ee.Geometry.Polygon(cor1)
+
+
+
+Map.addLayer(roi)
+Map.centerObject(roi);
+
+var cor2 = [46.56511543820733,36.814246256762765];
+
+var point = ee.Geometry.Point(cor2);
+
+var sentinel = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+.filterBounds(roi)
+.filterDate('2020','2021')
+.filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',45));
+
+function temporal_collection(collection, start, count, interval, unit){
+  var seq = ee.List.sequence(0, ee.Number(count).subtract(1));
+  var origin_date = ee.Date(start);
+  return ee.ImageCollection(seq.map(function(i){
+    var start_date = origin_date.advance(ee.Number(interval).multiply(i), unit);
+    var end_date = origin_date.advance(ee.Number(interval).multiply(ee.Number(i).add(1)), unit);
+    return collection.filterDate(start_date, end_date).median()
+    .set('system:time_start', start_date.millis())
+    .set('system:time_end', end_date.millis())
+    }))
+  }
+
+var monthly = temporal_collection(sentinel, '2020', 12, 1, 'month');
+
+var parameters = monthly.map(function(img){
+  var bands = img.select('B.*').multiply(0.0001);
+  var ndvi = bands.normalizedDifference(['B8','B4']).rename('ndvi');
+  var str = bands.expression('((1 - swir) ** 2)/(2 * swir)',{'swir': bands.select('B12')}).rename('str');
+  var stack = ee.Image.cat([ndvi, str]);
+  return stack
+  .copyProperties(img, img.propertyNames())
+  });
+  
+var str_full_cover = parameters.map(function(img){
+  var thr_full = img.select('ndvi').gt(0.3);
+  var str_full = img.select('str').updateMask(thr_full);
+  return str_full
+  .copyProperties(img, img.propertyNames())
+  });
+  
+var str_bareland = parameters.map(function(img){
+  var thr_bare = img.select('ndvi').gte(0).and(img.select('ndvi').lt(0.2));
+  var str_bare = img.select('str').updateMask(thr_bare)
+  return str_bare
+  .copyProperties(img, img.propertyNames())
+  })
+  
+  
+var vw = ee.Number(str_full_cover.max().reduceRegion({
+  reducer: ee.Reducer.max(), geometry: roi, scale: 100
+  }).values().get(0));
+  
+var vd = ee.Number(str_full_cover.min().reduceRegion({
+  reducer: ee.Reducer.min(), geometry: roi, scale: 100
+  }).values().get(0));
+  
+
+var iw = ee.Number(str_bareland.max().reduceRegion({
+  reducer: ee.Reducer.max(), geometry: roi, scale: 100
+  }).values().get(0)); 
+  
+
+var id = ee.Number(str_bareland.min().reduceRegion({
+  reducer: ee.Reducer.min(), geometry: roi, scale: 100
+  }).values().get(0));  
+  
+
+var sw = vw.subtract(iw);
+var sd = vd.subtract(id);
+
+var sm = parameters.map(function(img){
+  var mask = img.select('ndvi').lt(-0.1).not()
+  var index = img.expression('(id + sd * ndvi - str) / (id - iw + (sd - sw) * ndvi)',
+  {'id': id, 'sd': sd, 'ndvi': img.select('ndvi'), 'str': img.select('str'), 'iw': iw, 'sw': sw})
+  .rename('soil_moisture');
+  return index.multiply(1000).updateMask(mask)
+  .copyProperties(img, img.propertyNames())
+  })
+  
+print(
+  ui.Chart.image.series(sm, point, ee.Reducer.first(), 20, 'system:time_start')
+  )
+  
+Map.addLayer(sm.toBands().clip(roi),[],'sm',false);
+
+
+Export.image.toDrive({
+  image: sm.toBands().clip(roi),
+  description: 'sen_sm',
+  scale: 20, 
+  region: roi,
+  maxPixels:  1e13,
+  crs: sm.toBands().getInfo().crs,
+  folder: 'sentinel2'
+  })  
+  
