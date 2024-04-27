@@ -1,0 +1,83 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var basin = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_6")
+
+var cor = [28.577460872036138,64.5593101743747]
+
+var point = ee.Geometry.Point(cor)
+
+
+var roi = basin.filterBounds(point)
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var canopy = ee.ImageCollection("projects/meta-forest-monitoring-okw37/assets/CanopyHeight").mosaic()
+
+
+Map.addLayer(canopy.clip(roi),[],'canopy_height',false)
+
+
+
+var forest_thr = canopy.gt(0);
+var forest = canopy.updateMask(forest_thr);
+
+Map.addLayer(forest.clip(roi),[],'forest',false)
+  
+print(
+  ui.Chart.image.histogram(forest,roi,100)
+  )
+
+var canopy_mean = forest.reduceRegion({
+  reducer: ee.Reducer.mean(), geometry: roi, scale: 100
+  }).values().get(0);
+  
+print('canopy_mean', canopy_mean)
+
+var canopy_max = forest.reduceRegion({
+  reducer: ee.Reducer.max(), geometry: roi, scale: 100
+  }).values().get(0);
+  
+print('canopy_max', canopy_max)
+
+var canopy_per99 = forest.reduceRegion({
+  reducer: ee.Reducer.percentile([99]), geometry: roi, scale: 100
+  }).values().get(0);
+  
+print('canopy_per99', canopy_per99)
+
+
+var cons = ee.Image.constant(0);
+
+var class1 = cons.where(forest.lt(5), 1);
+var class2 = class1.where(forest.gte(5).and(forest.lt(10)),2)
+var class3 = class2.where(forest.gte(10), 3)
+
+Map.addLayer(class3.clip(roi),{min: 0, max : 3,
+palette:['black','red','orange','green']},'class3',false)
+
+
+Export.image.toDrive({
+  image: class3.clip(roi), 
+  description: 'canopy_hieght_classified',
+  scale: 30, 
+  region: roi,
+  maxPixels: 1e13,
+  crs: class3.getInfo().crs,
+  folder: 'test'
+  })
+
+
+  
+  
+  
