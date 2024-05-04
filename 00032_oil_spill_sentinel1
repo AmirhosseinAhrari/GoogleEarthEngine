@@ -1,0 +1,78 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor  = [
+  [32.33741352024498,31.356500050396157],
+  [32.59559223118248,31.356500050396157],
+  [32.59559223118248,31.58490130730319],
+  [32.33741352024498,31.58490130730319],
+  [32.33741352024498,31.356500050396157]
+  ]
+  
+var roi = ee.Geometry.Polygon(cor)
+
+
+
+Map.centerObject(roi);
+
+var sen1 = ee.ImageCollection("COPERNICUS/S1_GRD")
+.select('VV')
+.filterDate('2014','2015')
+.filterBounds(roi)
+.filter(ee.Filter.calendarRange(10, 10, 'month'))
+.filter(ee.Filter.calendarRange(4, 4, 'day_of_month'))
+.filter(ee.Filter.listContains('transmitterReceiverPolarisation','VV'))
+.filter(ee.Filter.eq('instrumentMode','IW')).mosaic()
+
+//print(sen1.aggregate_array('orbitProperties_pass'))
+
+Map.addLayer(sen1.clip(roi),[],'sen1',false)
+
+print(
+  ui.Chart.image.histogram(sen1,roi,10)
+  )
+
+var despeckel = sen1.focalMean(100, 'square', 'meters');
+
+Map.addLayer(despeckel.clip(roi),[],'sen_despeckel',false);
+
+print(
+  ui.Chart.image.histogram(despeckel,roi,30)
+  )
+  
+var thr = despeckel.lt(-22);
+
+Map.addLayer(thr.clip(roi),[],'oil_spill',false);
+  
+  
+var mask = thr.updateMask(thr);
+
+Map.addLayer(mask.clip(roi),[],'mask',false)
+
+var area = mask.multiply(ee.Image.pixelArea().divide(1e6));
+
+var oil_spill_area = ee.Number(area.reduceRegion({
+  reducer: ee.Reducer.sum(), geometry: roi, scale: 100
+  }).values().get(0));
+  
+print(oil_spill_area)
+
+var oil_spill_vector  = mask.reduceToVectors({
+  geometry: roi, scale: 100
+  });
+  
+Map.addLayer(oil_spill_vector)
+
+Export.table.toDrive({
+  collection: oil_spill_vector, description: 'oil_spill', fileFormat: 'SHP', folder: 'oil_spill2'
+  })
+  
