@@ -1,0 +1,57 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var table = ee.FeatureCollection("FAO/GAUL/2015/level1")
+
+
+var cor = [2.3495010435451746,48.8768460308918]
+
+var geometry = ee.Geometry.Point(cor)
+
+var roi = table.filterBounds(geometry);
+
+Map.addLayer(roi)
+
+Map.centerObject(roi)
+
+function night_light(time_start, time_end, loc_name){
+
+var viirs = ee.ImageCollection("NOAA/VIIRS/DNB/MONTHLY_V1/VCMCFG")
+.select('avg_rad')
+.filterDate(time_start, time_end)
+.mean();
+
+var stats = viirs.reduceRegion({
+  reducer: ee.Reducer.mean().combine({reducer2: ee.Reducer.minMax(), sharedInputs: true}), geometry: roi, scale: 500
+  })
+  
+  print('night light stat for '+time_start, stats)
+  
+
+Map.addLayer(viirs.clip(roi),[],loc_name+time_start,false)
+
+Export.image.toDrive({
+  image: viirs.clip(roi),
+  description: loc_name+time_start, 
+  scale: 500, 
+  crs: viirs.getInfo().crs,
+  region: roi,
+  folder: 'test'
+  })
+
+return viirs
+
+}
+
+var helsinki2013 = night_light('2013','2014', 'Paris')
+
+var helsinki2023 = night_light('2023','2024', 'Paris')
