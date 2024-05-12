@@ -1,0 +1,77 @@
+
+
+
+var table = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_5")
+
+var cor = [11.279492187499986,51.39420666042534]
+
+var point = ee.Geometry.Point(cor)
+
+var roi = table.filterBounds(point)
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+
+
+// var ph = ee.Image("OpenLandMap/SOL/SOL_PH-H2O_USDA-4C1A2A_M/v02")
+
+// var visualization = {
+//   bands: ['b0'],
+//   min: 42,
+//   max: 110,
+//   palette: [
+//     'ff0000', 'ff1c00', 'ff3900', 'ff5500', 'ff7100', 'ff8e00',
+//     'ffaa00', 'ffc600', 'ffe200', 'ffff00', 'e3ff00', 'c7ff00',
+//     'aaff00', '8eff00', '72ff00', '55ff00', '39ff00', '1dff00',
+//     '01ff00', '00ff1c', '00ff38', '00ff54', '00ff71', '00ff8d',
+//     '00ffa9', '00ffc6', '00ffe2', '00fffe', '00e3ff', '00c7ff',
+//     '00abff', '008fff', '0072ff', '0056ff', '003aff', '001dff',
+//     '0001ff', '1b00ff', '3800ff', '5400ff',
+//   ]
+// };
+
+// Map.addLayer(ph.clip(roi),visualization,'soil_ph',false)
+
+// print(ph)
+
+// print(
+//   ui.Chart.image.histogram(ph.select('b0'), roi, 250)
+//   )
+
+
+// Export.image.toDrive({
+//   image: ph.clip(roi).select('b0'),
+//   description: 'ph',
+//   scale: 250,
+//   region: roi,
+//   crs: ph.getInfo().crs,
+//   folder: 'test'
+//   })
+
+function soil(id, band, name){
+  
+  var image = ee.Image(id).select(band)
+  
+  Map.addLayer(image.clip(roi),[],name,false)
+  print(ui.Chart.image.histogram(image, roi, 250))
+  
+  var stat = image.reduceRegion({reducer: ee.Reducer.mean().combine({reducer2: ee.Reducer.minMax(), sharedInputs: true}),
+  geometry: roi, scale: 250});
+  print('statistical information for '+name,stat)
+  
+  Export.image.toDrive({
+  image: image.clip(roi),
+  description: name,
+  scale: 250,
+  region: roi,
+  crs: image.getInfo().crs,
+  folder: 'test'
+  })
+  
+  return image
+  
+  }
+
+var ph = soil("OpenLandMap/SOL/SOL_PH-H2O_USDA-4C1A2A_M/v02", 'b0', 'ph')
+var clay = soil("OpenLandMap/SOL/SOL_CLAY-WFRACTION_USDA-3A1A1A_M/v02", 'b0', 'clay')
