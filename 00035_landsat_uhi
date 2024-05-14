@@ -1,0 +1,89 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var table = ee.FeatureCollection("FAO/GAUL/2015/level1")
+
+var cor = [24.92986164991798,60.20951014430325]
+
+var point = ee.Geometry.Point(cor)
+
+var roi = table.filterBounds(point)
+.map(function(vec){
+  return vec.simplify(1000)
+  });
+  
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var time_start = '2023', time_end = '2024'
+
+var urban = ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
+.select('label')
+.filterDate(time_start, time_end)
+.filterBounds(roi)
+.filter(ee.Filter.calendarRange(5, 9, 'month'))
+.mode().eq(6);
+
+Map.addLayer(urban.clip(roi),[],'urban',false)
+
+
+var landsat = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.select('ST_B10')
+.filterBounds(roi)
+.filterDate(time_start, time_end)
+.filter(ee.Filter.calendarRange(1, 12, 'month'))
+.filter(ee.Filter.lt('CLOUD_COVER',10))
+.map(function(img){
+  var gain = ee.Number(img.get('TEMPERATURE_MULT_BAND_ST_B10'))
+  var offset = ee.Number(img.get('TEMPERATURE_ADD_BAND_ST_B10'))
+  return img.multiply(gain).add(offset)
+  .copyProperties(img, img.propertyNames())
+  })
+
+var tir_img = landsat.median();
+
+Map.addLayer(tir_img.clip(roi),[],'tir_median',false)
+
+var tir_mean = ee.Number(tir_img.reduceRegion({
+  reducer: ee.Reducer.mean(), geometry: roi, scale: 100
+  }).values().get(0));
+  
+print('tir average', tir_mean)
+
+var uhi = tir_img.expression('(tir - mean)/mean',{
+  'tir': tir_img, 'mean': tir_mean
+  }).rename('uhi');
+  
+Map.addLayer(uhi.clip(roi),[],'uhi',false)  
+
+var uhi_class = ee.Image.constant(0).where(uhi.gte(0).and(uhi.lt(0.005)), 1) // weak
+                .where(uhi.gte(0.005).and(uhi.lt(0.010)), 2) // middle
+                .where(uhi.gte(0.010).and(uhi.lt(0.015)), 3) // strong
+                .where(uhi.gte(0.015).and(uhi.lt(0.020)), 4) // stronger
+                .where(uhi.gte(0.020), 5)// strongest
+                .updateMask(urban)
+
+Map.addLayer(uhi_class.clip(roi),{min: 1, max: 5, 
+        palette: ['white','yellow','orange','red','brown']}, 'uhi_class',false)
+
+Export.image.toDrive({
+  image: uhi_class.clip(roi),
+  description: 'uhi_layer',
+  scale: 100,
+  region: roi,
+  crs: 'EPSG:4326',
+  maxPixels: 1e13,
+  folder: 'test'
+  })
+
+  
+  
