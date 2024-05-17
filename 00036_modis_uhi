@@ -1,0 +1,84 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var table = ee.FeatureCollection("FAO/GAUL/2015/level1")
+
+var cor = [51.30532384324284,35.75749565360389]
+
+var point = ee.Geometry.Point(cor)
+
+
+var roi = table.filterBounds(point).map(function(f){
+  return f.simplify(1000)
+  })
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var time_start = '2020',  time_end = '2021'
+
+var winter = ee.ImageCollection("MODIS/061/MOD11A2")
+.select('LST_Night_1km')
+.filterDate(time_start, time_end)
+.filter(ee.Filter.calendarRange(1, 3, 'month')).median().multiply(0.02);
+
+Map.addLayer(winter.clip(roi),[],'modis_lst_night',false)
+
+var winter_mean = ee.Number(winter.reduceRegion({
+  reducer: ee.Reducer.mean(), geometry: roi, scale: 1000
+  }).values().get(0));
+
+var winter_uhi = winter.expression('(winter - mean)/mean',{
+  'winter': winter, 'mean': winter_mean
+  }).rename('uhi');
+  
+Map.addLayer(winter_uhi.clip(roi),[],'winter_uhi',false);
+
+print(
+  ui.Chart.image.histogram(winter_uhi,roi, 1000)
+  )
+  
+var uhi_class = ee.Image.constant(0)
+                .where(winter_uhi.gte(0).and(winter_uhi.lt(0.005)), 1) // weak 
+                .where(winter_uhi.gte(0.005).and(winter_uhi.lt(0.010)), 2) // middle
+                .where(winter_uhi.gte(0.010).and(winter_uhi.lt(0.015)), 3) // strong
+                .where(winter_uhi.gte(0.015).and(winter_uhi.lt(0.020)), 4) // stronger
+                .where(winter_uhi.gte(0.020), 5) // strongest
+
+Map.addLayer(uhi_class.clip(roi),
+{min: 1, max: 5, palette:['white','yellow','orange','red','brown']},'uhi_class',false);
+
+var urban = ee.ImageCollection("MODIS/061/MCD12Q1")
+.select('LC_Type1')
+.filterDate(time_start, time_end)
+.toBands().eq(13);
+
+Map.addLayer(urban.clip(roi),[],'urban',false)
+
+var uhi_class2 = uhi_class.updateMask(urban);
+
+Map.addLayer(uhi_class2.clip(roi),
+{min: 1, max: 5, palette:['white','yellow','orange','red','brown']},'uhi_class2',false);
+
+
+Export.image.toDrive({
+  image: uhi_class2.clip(roi),
+  description: 'uhi_arid',
+  scale: 1000, 
+  region: roi, 
+  maxPixels: 1e13,
+  crs: 'EPSG:4326',
+  folder: 'test'
+  })
+  
+
+
