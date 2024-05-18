@@ -1,0 +1,65 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor = [52.29632817890257,33.99522092192627]
+
+var point = ee.Geometry.Point(cor)
+
+var table = ee.FeatureCollection("FAO/GAUL/2015/level0")
+
+var roi = table.filterBounds(point);
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+
+function pr_clustering(id, time_start, time_end, numclass){
+
+var pr = ee.ImageCollection(id).filterDate(time_start, time_end);
+
+var pr_dataset = pr.toBands();
+
+var training = pr_dataset.sample({
+  region: roi, scale: 5000, numPixels: 1000
+  })
+  
+var clusterer = ee.Clusterer.wekaKMeans(numclass).train(training)
+
+var pr_map = pr_dataset.cluster(clusterer);
+
+Map.addLayer(pr_map.clip(roi),{min: 0, max: 4},'pr_map',false)
+
+var pr_sum = pr.sum()
+
+var pr_stat = pr_sum.addBands(pr_map).reduceRegion({
+  reducer: ee.Reducer.mean().combine({reducer2: ee.Reducer.stdDev(), sharedInputs: true})
+  .group(1), geometry: roi, scale: 5000
+  })
+
+print('statistical inf for pr zones:', pr_stat)
+
+Export.image.toDrive({
+  image: pr_map, 
+  description: 'pr_map',
+  scale: 5000, 
+  region: roi,
+  crs: pr_map.getInfo().crs, 
+  folder: 'test'
+  })
+
+return pr_map
+
+}
+
+var pr_pattern = pr_clustering("UCSB-CHG/CHIRPS/DAILY", '2020', '2021', 5);
+
+
