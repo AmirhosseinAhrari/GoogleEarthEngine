@@ -1,0 +1,57 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [[54.38668797159735,36.92373567956783],
+           [54.62976048136297,36.92373567956783],
+           [54.62976048136297,37.075089492834536],
+           [54.38668797159735,37.075089492834536],
+           [54.38668797159735,36.92373567956783]]
+
+
+var roi = ee.Geometry.Polygon(cor)
+
+Map.centerObject(roi);
+
+var time_start = '2019', time_end = '2020'
+
+var before = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.select('SR.*')
+.filterDate(time_start, time_end)
+.filterBounds(roi)
+.filter(ee.Filter.calendarRange(2,2,'month'))
+.median().multiply(0.0000275).add(-0.2);
+
+var ndvi_before = before.normalizedDifference(['SR_B5','SR_B4'])
+
+
+Map.addLayer(ndvi_before.clip(roi),[],'before', false);
+
+var after = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.select('SR.*')
+.filterDate(time_start, time_end)
+.filterBounds(roi)
+.filter(ee.Filter.calendarRange(4,4,'month'))
+.median().multiply(0.0000275).add(-0.2);
+
+var ndvi_after = after.normalizedDifference(['SR_B5','SR_B4']);
+
+Map.addLayer(ndvi_after.clip(roi), [], 'ndvi_after', false )
+
+
+var ndvi_change = ndvi_before.subtract(ndvi_after);
+
+Map.addLayer(ndvi_change.clip(roi),[],'ndvi_change', false)
+
+var change_percent = ((ndvi_after.subtract(ndvi_before)).divide(ndvi_before)).multiply(100)
+var change_thr = change_percent.lt(0);
+var change_mask = change_percent.updateMask(change_thr);
+
+Map.addLayer(change_mask.clip(roi),[],'change_percent', false)
