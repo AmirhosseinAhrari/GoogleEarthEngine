@@ -1,0 +1,145 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [45.65354975558493,36.50321863483044],
+  [46.59837397433493,36.50321863483044],
+  [46.59837397433493,37.27644180666329],
+  [45.65354975558493,37.27644180666329],
+  [45.65354975558493,36.50321863483044]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+Map.centerObject(roi);
+
+var time_start = '2001', time_end = '2024'
+
+var ndvi= ee.ImageCollection("MODIS/061/MOD13A2")
+.select('NDVI')
+.filterDate(time_start, time_end);
+
+
+var temp= ee.ImageCollection("MODIS/061/MOD11A2")
+.select('LST_Day_1km')
+.filterDate(time_start, time_end);
+
+// vci: vegetation condition index
+// ndvi, ndvi_min, ndvi_max
+// vci = (ndvi - ndvi_min)/(ndvi_max - ndvi_min)
+
+var ndvi_min = ndvi.min().multiply(0.0001)
+var ndvi_max = ndvi.max().multiply(0.0001)
+
+// temporal function to convert data into monthly format
+
+function temporal_collection(collection, start, count, interval, unit){
+  var seq = ee.List.sequence(0, ee.Number(count).subtract(1));
+  var origin_date = ee.Date(start);
+  return ee.ImageCollection(seq.map(function(i){
+    var start_date = origin_date.advance(ee.Number(interval).multiply(i), unit);
+    var end_date = origin_date.advance(ee.Number(interval).multiply(ee.Number(i).add(1)), unit);
+    return collection.filterDate(start_date, end_date).mean()
+    .set('system:time_start', start_date.millis())
+    .set('system:time_end', end_date.millis())
+    }))
+  }
+  
+// monthly ndvi image collection
+
+var ndvi_monthly = temporal_collection(ndvi, time_start, 276, 1, 'month');
+
+// vci
+
+var vci = ndvi_monthly.map(function(img){
+  var index = img.expression('(ndvi - min) / (max - min)',
+  {'ndvi': img.select('NDVI').multiply(0.0001), 'min': ndvi_min, 'max': ndvi_max})
+  return index.rename('VCI')
+  .copyProperties(img, img.propertyNames())
+  });
+  
+
+// tci: thermal condition index
+// lst_max, lst_min
+// tci = (max - lst) / (max  - min)
+
+var temp_max = temp.max().multiply(0.02);
+var temp_min = temp.min().multiply(0.02);
+
+var temp_monthly = temporal_collection(temp, time_start, 276, 1, 'month');
+
+var tci = temp_monthly.map(function(img){
+  var index = img.expression('(max - lst)/(max - min)',
+  {'max': temp_max, 'min': temp_min, 'lst': img.multiply(0.02)})
+  return index.rename('TCI')
+  .copyProperties(img,img.propertyNames())
+  }) ;
+  
+
+var modis_indices = vci.combine(tci);
+
+
+// vhi: vegetation health index
+// vci = 0.5 * vci + (1 - 0.5) * tci
+
+
+var drought = modis_indices.map(function(img){
+  var vhi = img.expression('0.5 * vci + (1 - 0.5) * tci',{
+    'vci': img.select('VCI'), 'tci': img.select('TCI')
+    }).rename('VHI')
+  return img.addBands(vhi)
+  .copyProperties(img, img.propertyNames())
+  });
+  
+
+print(
+  ui.Chart.image.series(drought, roi, ee.Reducer.mean(),
+  1000, 'system:time_start')
+  )
+  
+print(
+  ui.Chart.image.series(drought.select('VCI','TCI'), roi, ee.Reducer.mean(),
+  1000, 'system:time_start')
+  )
+
+print(
+  ui.Chart.image.series(drought.select('VHI'), roi, ee.Reducer.mean(),
+  1000, 'system:time_start')
+  )
+
+Map.addLayer(drought.select('VHI').filterDate('2005','2006').toBands().clip(roi),[],'VHI', false)
+
+Export.image.toDrive({
+  image: drought.filterDate('2005','2006').select('VHI').toBands(), 
+  description: 'modis_drought_vhi',
+  scale: 1000, 
+  crs: 'EPSG:4326', 
+  maxPixels: 1e13, 
+  region: roi
+  })
+
+Export.image.toDrive({
+  image: drought.filterDate('2005','2006').select('TCI').toBands(), 
+  description: 'modis_drought_tci',
+  scale: 1000, 
+  crs: 'EPSG:4326', 
+  maxPixels: 1e13, 
+  region: roi
+  })
+  
+Export.image.toDrive({
+  image: drought.filterDate('2005','2006').select('VCI').toBands(), 
+  description: 'modis_drought_vci',
+  scale: 1000, 
+  crs: 'EPSG:4326', 
+  maxPixels: 1e13, 
+  region: roi
+  })
