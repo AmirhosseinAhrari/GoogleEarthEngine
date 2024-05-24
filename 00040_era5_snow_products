@@ -1,0 +1,85 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var table = ee.FeatureCollection("FAO/GAUL/2015/level0")
+
+var cor = [26.209333491161843,63.690905770960455]
+
+var roi = ee.Geometry.Point(cor)
+
+
+var era5 = ee.ImageCollection("ECMWF/ERA5_LAND/MONTHLY_AGGR")
+.select('snow.*');
+
+var era5_mean = era5.mean()
+
+Map.addLayer(era5_mean.select('snow_cover'),[],'snow_cover',false)
+
+var snow_change = era5.select('snow_cover').reduce(ee.Reducer.kendallsCorrelation())
+.select('snow_cover_tau')
+
+Map.addLayer(snow_change,[],'snow_change',false);
+
+var increase_trend = snow_change.gt(0)
+
+Map.addLayer(increase_trend,[],'increase_trend',false)
+
+var decrease_trend = snow_change.lt(0)
+
+Map.addLayer(decrease_trend,[],'decrease_trend',false)
+
+var roi = table.filterBounds(roi).map(function(feature){
+  return feature.simplify(1000)
+  });
+  
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+print(
+  ui.Chart.image.series(era5.select('snow_cover'),
+  roi, ee.Reducer.mean(), 10000, 'system:time_start')
+  )
+
+var year_list = ee.List.sequence(1950,2023)
+
+var snow_annual = ee.ImageCollection(year_list.map(function(year){
+  
+  var snow_year = ee.ImageCollection(era5.filter(ee.Filter.calendarRange(year, year, 'year')));
+  var snow_year_mean = snow_year.mean();
+  var time = ee.Date.fromYMD(year,1,1).millis()
+  return snow_year_mean
+  .set('system:time_start', time)
+  
+  }))
+  
+print(
+  ui.Chart.image.series(snow_annual.select('snow_depth'), roi, 
+  ee.Reducer.mean(), 10000, 'system:time_start')
+  )
+  
+  
+var month_list = ee.List.sequence(1,12)
+
+var snow_monthly = ee.ImageCollection(month_list.map(function(month){
+  
+  var snow_month = ee.ImageCollection(era5.filter(ee.Filter.calendarRange(month, month, 'month')));
+  var snow_month_mean = snow_month.mean();
+  var time = ee.Date.fromYMD(2000,month,1).millis()
+  return snow_month_mean
+  .set('system:time_start', time)
+  
+  }))  
+  
+  
+print(
+  ui.Chart.image.series(snow_monthly.select('snow_depth'),
+  roi, ee.Reducer.mean(), 10000, 'system:time_start')
+  )  
