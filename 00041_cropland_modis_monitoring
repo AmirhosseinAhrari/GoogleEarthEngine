@@ -1,0 +1,44 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [44.73934589893846,35.494599065738065],
+  [47.99129902393846,35.494599065738065],
+  [47.99129902393846,37.994365217637785],
+  [44.73934589893846,37.994365217637785],
+  [44.73934589893846,35.494599065738065]
+  ]
+
+var roi = ee.Geometry.Polygon(cor)
+
+
+Map.centerObject(roi);
+ 
+var time_start = '2001', time_end = '2024'
+
+var modis = ee.ImageCollection("MODIS/061/MCD12Q1")
+.select('LC_Type1')
+.filterDate(time_start, time_end);
+
+function cropland_area(img){
+  var thr = img.eq(12).or(img.eq(14));
+  var mask = thr.updateMask(thr);
+  var area = mask.multiply(ee.Image.pixelArea().divide(1e6));
+  return area
+  .copyProperties(img, ['system:time_start', 'system:time_end'])
+  }
+
+var cropland = modis.map(cropland_area);
+
+print(
+  ui.Chart.image.series(cropland, roi, ee.Reducer.sum(),
+  500, 'system:time_start')
+  )
