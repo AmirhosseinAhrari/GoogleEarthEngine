@@ -1,0 +1,76 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [45.953922269937266,36.92715318092904]
+
+var roi = ee.Geometry.Point(cor)
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var noaa_ndvi = ee.ImageCollection("NOAA/CDR/AVHRR/NDVI/V5")
+.select(['NDVI','QA'])
+.filterDate('1985','1987');
+
+var bitwiseExtract = function(input, fromBit, toBit) {
+  if (toBit === undefined) toBit = fromBit
+  var maskSize = ee.Number(1).add(toBit).subtract(fromBit)
+  var mask = ee.Number(1).leftShift(maskSize).subtract(1)
+  return input.rightShift(fromBit).bitwiseAnd(mask)
+}
+
+var ndvi_mask = noaa_ndvi.map(function(img){
+  var ndvi = img.select('NDVI').multiply(0.0001);
+  var qa = img.select('QA')
+  var cloud = bitwiseExtract(qa, 1)
+  var shadow = bitwiseExtract(qa, 2)
+  var cloud_shadow_pixels = cloud.eq(1).or(shadow.eq(1));
+  var cloud_shadow_mask = ndvi.updateMask(cloud_shadow_pixels.not())
+  return cloud_shadow_mask
+  .copyProperties(img, img.propertyNames())
+  })
+  
+Map.addLayer(noaa_ndvi.filterDate('1985-05-01','1985-06-01').toBands(), [],'ndvi_original',false)
+Map.addLayer(ndvi_mask.filterDate('1985-05-01','1985-06-01').toBands(), [],'ndvi_masked',false)
+
+
+// print(
+//   ui.Chart.image.series(ndvi_mask, geometry, ee.Reducer.first(), 5000, 'system:time_start')
+//   )
+
+var days = 30
+var millis = ee.Number(days).multiply(1000 * 24 * 3600)
+var filter = ee.Filter.maxDifference({
+  difference: millis, leftField: 'system:time_start', rightField: 'system:time_start'
+  });
+  
+var join = ee.Join.saveAll({matchesKey: 'images'});
+var joined_collection = ee.ImageCollection(join.apply(ndvi_mask, ndvi_mask, filter));
+
+var ndvi_smoothed = joined_collection.map(function(img){
+  var images = ee.ImageCollection.fromImages(img.get('images'))
+  .reduce(ee.Reducer.median())
+  return img.addBands(images)
+  .copyProperties(img, ['system:time_start', 'system:time_end'])
+  })
+  
+print(
+  ui.Chart.image.series(ndvi_smoothed, roi, ee.Reducer.first(), 5000, 'system:time_start')
+  )
+
+
+
+Map.addLayer(ndvi_smoothed.select('NDVI_median').filterDate('1985-05-01','1985-06-01').toBands(), [],'ndvi_smoothed',false)
+
+
+
+
