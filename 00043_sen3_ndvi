@@ -1,0 +1,68 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+ 
+var table = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_5")
+
+var cor = [45.97338733591252,36.985496895804545]
+
+var geometry = ee.Geometry.Point(cor)
+ 
+var roi = table.filterBounds(geometry).map(function(feature){
+  return feature.simplify(1000)
+  });
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var time_start = '2020', time_end = '2024'
+
+var sen3 = ee.ImageCollection("COPERNICUS/S3/OLCI")
+.filterDate(time_start, time_end)
+.filterBounds(roi)
+.map(function(img){
+  var ndvi = img.normalizedDifference(['Oa17_radiance','Oa08_radiance']).rename('ndvi')
+  return ndvi
+  .copyProperties(img,['system:time_start','system:time_end'])
+  });
+  
+Map.addLayer(sen3.median().clip(roi),[],'sen3_preview',false)
+
+Export.image.toDrive({
+  image: sen3.median().clip(roi),
+  description: 'sen3_output',
+  scale: 1000,
+  region: roi, 
+  maxPixels: 1e13,
+  crs: 'EPSG:4326'
+  })
+
+
+var months = ee.List.sequence(1, 12)
+var years = ee.List.sequence(ee.Number.parse(time_start), ee.Number.parse(time_end).subtract(1));
+
+
+var monthly_ndvi = ee.ImageCollection(years.map(function(year){
+  return months.map(function(month){
+    var monthly_max = sen3
+    .filter(ee.Filter.calendarRange(year, year,'year'))
+    .filter(ee.Filter.calendarRange(month, month, 'month')).max()
+    var time = ee.Date.fromYMD(year, month, 1);
+    return monthly_max
+    .set('system:time_start', time.millis())
+    })
+  }).flatten())
+  
+print(
+  ui.Chart.image.series(monthly_ndvi, geometry, ee.Reducer.first(), 300, 'system:time_start')
+  )
+
+Map.addLayer(monthly_ndvi.toBands().clip(roi),[],'sen3_monthly',false)
+
