@@ -1,0 +1,82 @@
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor = [
+  [48.09247807376013,32.24597202127133],
+  [48.32868412844763,32.24597202127133],
+  [48.32868412844763,32.41654922827216],
+  [48.09247807376013,32.41654922827216],
+  [48.09247807376013,32.24597202127133]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)  
+
+var cor2 = [48.24079350344763,32.36163996259311]
+
+var geometry2 = ee.Geometry.Point(cor2)
+
+Map.centerObject(geometry)
+
+var time_start = '2020', time_end = '2021'
+
+var landsat = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.filterBounds(geometry)
+.filterDate(time_start, time_end)
+.filter(ee.Filter.eq('WRS_PATH', 166))
+.filter(ee.Filter.eq('WRS_ROW', 38))
+.filter(ee.Filter.lt('CLOUD_COVER',10))
+.map(function(img){
+  var gain = ee.Number(img.get('REFLECTANCE_MULT_BAND_3'))
+  var offset = ee.Number(img.get('REFLECTANCE_ADD_BAND_3'))
+  var ms = img.select('SR_B.*').multiply(gain).add(offset)
+  var ndvi = ms.normalizedDifference(['SR_B5','SR_B4']).rename('landsat')
+  return ndvi
+  .copyProperties(img, ['system:time_start', 'system:time_end'])
+  })
+
+// print(landsat.aggregate_array('WRS_PATH').distinct())
+// print(landsat.aggregate_array('WRS_ROW').distinct())
+
+var modis = ee.ImageCollection("MODIS/MOD09GA_006_NDVI")
+.filterDate(time_start, time_end)
+
+var days = 3
+var mills = ee.Number(days).multiply(1000 * 3600 * 24);
+var filter = ee.Filter.maxDifference(mills, 'system:time_start', null, 'system:time_start', null)
+
+var join = ee.Join.saveAll('modis');
+var join_data = ee.ImageCollection(join.apply(landsat, modis, filter))
+
+var collection = join_data.map(function(img){
+  var images = ee.ImageCollection.fromImages(img.get('modis')).max()
+  return img.addBands(images.rename('modis'))
+  });
+
+var model = collection.map(function(img){
+  var cons = ee.Image.constant(1);
+  return img.select('modis').addBands(cons).addBands(img.select('landsat'))
+  }).reduce(ee.Reducer.linearRegression(2, 1));
+  
+var gain = model.select('coefficients').arrayGet([0,0]);
+var offset = model.select('coefficients').arrayGet([1,0]);
+
+
+var modis30 = modis.map(function(img){
+  var prediction = img.multiply(gain).add(offset).rename('ndvi30')
+  return img.rename('ndvi500').addBands(prediction)
+  .copyProperties(img, img.propertyNames())
+  })
+  
+Map.addLayer(modis30.toBands().clip(geometry),[],'ndvi_sharp',false)
+
+print(
+  ui.Chart.image.series(modis30, geometry2, ee.Reducer.first(), 30, 'system:time_start')
+  )
