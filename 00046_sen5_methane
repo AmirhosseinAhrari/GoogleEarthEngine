@@ -1,0 +1,97 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var table = ee.FeatureCollection("FAO/GAUL/2015/level1")
+
+var cor = [51.332743999972905,35.727911062671176]
+
+var geometry = ee.Geometry.Point(cor)
+
+var roi = table.filterBounds(geometry);
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var time_start = '2020', time_end = '2024'
+
+var sen5 = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+.select(['CH4_column_volume_mixing_ratio_dry_air'],['methane'])
+.filterDate(time_start, time_end)
+.filterBounds(roi)
+
+var year_list = ee.List.sequence(ee.Number.parse(time_start), ee.Number.parse(time_end).subtract(1))
+var month_list = ee.List.sequence(1,12)
+
+var methane_monthly = ee.ImageCollection(year_list.map(function(year){
+  return month_list.map(function(month){
+    var monthly  = sen5
+    .filter(ee.Filter.calendarRange(year, year, 'year'))
+    .filter(ee.Filter.calendarRange(month, month, 'month')).mean()
+    var date = ee.Date.fromYMD(year, month, 1);
+    return monthly
+    .set('system:time_start', date.millis())
+    .set('system:index', date.format('YYYY-MM-dd'))
+    })
+  }).flatten())
+  
+print(
+  ui.Chart.image.series(methane_monthly, roi, ee.Reducer.mean(), 7000, 'system:time_start')
+  )
+  
+var ave = methane_monthly.mean();
+
+var band_viz = {
+  min: 1750,
+  max: 1900,
+  palette: ['black', 'blue', 'purple', 'cyan', 'green', 'yellow', 'red']
+};
+
+Map.addLayer(ave.clip(roi),band_viz, 'methane_ave',false)
+
+var anomaly = methane_monthly.map(function(img){
+  var index = img.subtract(ave).rename('anomaly')
+  return index
+  .copyProperties(img, img.propertyNames())
+  });
+  
+print(
+  ui.Chart.image.series(anomaly, roi, ee.Reducer.mean(), 7000, 'system:time_start')
+  .setChartType('ColumnChart')
+  )  
+  
+var pos_anomaly = anomaly.map(function(img){
+  var ave_anom = ee.Number(img.reduceRegion({
+    reducer: ee.Reducer.mean(), geometry: roi, scale: 7000
+    }).values().get(0))
+  return img
+  .copyProperties(img, img.propertyNames())
+  .set('methane_value', ave_anom)
+  }).filter(ee.Filter.gt('methane_value',0));
+
+print(
+  ui.Chart.image.series(pos_anomaly, roi, ee.Reducer.mean(), 7000, 'system:time_start')
+  .setChartType('ColumnChart')
+  )    
+
+Export.image.toDrive({
+  image: pos_anomaly.toBands().clip(roi),
+  description: 'pos_anomaly', 
+  region: roi, 
+  scale: 7000, 
+  maxPixels: 1e13,
+  folder: 'test', 
+  crs: 'EPSG:4326'
+  })
+
+var trend = methane_monthly.reduce(ee.Reducer.kendallsCorrelation());
+
+Map.addLayer(trend.select('methane_tau').clip(roi),{palette: ['green','black','red']},'ch4_trend',false);
+
