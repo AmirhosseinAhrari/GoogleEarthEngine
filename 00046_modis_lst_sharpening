@@ -1,0 +1,98 @@
+ 
+ 
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+ 
+
+
+var cor = [
+  [45.832858804169355,36.64822615381035],
+  [46.568942788544355,36.64822615381035],
+  [46.568942788544355,37.17965366966633],
+  [45.832858804169355,37.17965366966633],
+  [45.832858804169355,36.64822615381035]
+  ]
+
+
+var geometry = ee.Geometry.Polygon(cor)
+
+Map.centerObject(geometry)
+
+
+var time_start = '2013', time_end = '2024'
+
+var landsat = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.filterDate(time_start, time_end)
+.filterBounds(geometry)
+.filter(ee.Filter.lt('CLOUD_COVER', 10))
+.filter(ee.Filter.eq('WRS_PATH', 168))
+.filter(ee.Filter.eq('WRS_ROW', 34))
+.map(function(img){
+  var tir = img.select('ST_B10')
+  var tir_gain = ee.Number(img.get('TEMPERATURE_MULT_BAND_ST_B10'))
+  var tir_offset = ee.Number(img.get('TEMPERATURE_ADD_BAND_ST_B10'))
+  var lst = tir.multiply(tir_gain).add(tir_offset)
+  return lst.rename('landsat')
+  .copyProperties(img, ['system:time_start','system:index'])
+  })
+
+var modis = ee.ImageCollection("MODIS/061/MOD11A1")
+.filterDate(time_start, time_end)
+.map(function(img){
+  var lst = img.select('LST_Day_1km').multiply(0.02)
+  return lst.rename('modis')
+  .copyProperties(img, ['system:time_start', 'system:index'])
+  })
+
+var day = 2
+var mills = ee.Number(day).multiply(1000 * 3600 * 24)
+var filter = ee.Filter.maxDifference({
+  difference: mills, leftField: 'system:time_start', rightField: 'system:time_start'
+  });
+var join = ee.Join.saveAll('modis_temp');
+
+var join_collections = ee.ImageCollection(join.apply(landsat, modis, filter))
+
+var collection = join_collections.map(function(img){
+  var modis = ee.ImageCollection.fromImages(img.get('modis_temp')).max();
+  return img.addBands(modis)
+  })  
+  
+
+var model = collection.map(function(img){
+  var modis = img.select('modis')
+  var landsat = img.select('landsat')
+  var cons = ee.Image.constant(1)
+  var indep = modis.addBands(cons)
+  var dep = landsat
+  return indep.addBands(dep)
+  }).reduce(ee.Reducer.linearRegression(2, 1));
+  
+var model_gain = model.select('coefficients').arrayGet([0,0])
+var model_offset = model.select('coefficients').arrayGet([1,0])
+
+var modis100 = collection.map(function(img){
+  var modis = img.select('modis');
+  var modis_sharp  = modis.multiply(model_gain).add(model_offset).rename('modis100')
+  return modis.addBands(modis_sharp)
+  .copyProperties(img, img.propertyNames())
+  })
+
+Map.addLayer(modis100.toBands().clip(geometry),[],'modis',false)
+
+
+var mod_temp_100 = modis
+.filter(ee.Filter.calendarRange(7,7,'month'))
+.map(function(img){
+  return img.addBands(img.multiply(model_gain).add(model_offset).rename('sharpened'))
+  })
+  
+Map.addLayer(mod_temp_100.toBands().clip(geometry),[],'mod100',false)
+
