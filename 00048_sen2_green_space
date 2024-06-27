@@ -1,0 +1,77 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+ 
+ 
+var cor  = [
+  [51.40150195835105,35.680686269764024], 
+  [51.41738063571921,35.67796719930233],
+  [51.41841060398093,35.68584527697069],
+  [51.420813863258275,35.68584527697069],
+  [51.41944057224265,35.70145969785625],
+  [51.40536433933249,35.70118089572008],
+  [51.40150195835105,35.680686269764024]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+Map.centerObject(geometry)
+
+var sen2  = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+.filterBounds(geometry)
+.filterDate('2018','2024')
+.filter(ee.Filter.calendarRange(6,8,'month'))
+.filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
+.map(function(img){
+  var bands = img.select('B.*').multiply(0.0001);
+  var ndvi = bands.normalizedDifference(['B8','B4']).rename('ndvi')
+  return ndvi
+  .copyProperties(img, ['system:time_start', 'system:time_end'])
+  })
+
+var ndvi_mean = sen2.median();
+
+Map.addLayer(ndvi_mean.clip(geometry),[],'ndvi_mean',false)
+
+print(
+  ui.Chart.image.histogram(ndvi_mean, geometry, 10)
+  )
+
+var ndvi_thr = ndvi_mean.gt(0.25);
+
+Map.addLayer(ndvi_thr.clip(geometry),[],'ndvi_thr', false)
+
+var ndvi_mask = ndvi_thr.updateMask(ndvi_thr);
+
+Map.addLayer(ndvi_mask.clip(geometry),[],'ndvi_mask', false)
+
+var ndvi_area = ndvi_mask.multiply(ee.Image.pixelArea())
+
+Map.addLayer(ndvi_area.clip(geometry),[],'ndvi_area', false)
+
+var area_val  = ndvi_area.reduceRegion({
+  reducer: ee.Reducer.sum(), geometry: geometry, scale: 10
+  }).values().get(0)
+  
+print(area_val)
+
+var tree_area = sen2.map(function(img){
+  var ndvi_thr = img.gt(0.25);
+  var ndvi_mask = ndvi_thr.updateMask(ndvi_thr);
+  var ndvi_area = ndvi_mask.multiply(ee.Image.pixelArea())
+  return ndvi_area
+  .copyProperties(img, img.propertyNames())
+  })
+  
+print(
+  ui.Chart.image.series(tree_area, geometry, ee.Reducer.sum(), 10, 'system:time_start')
+  .setChartType('ColumnChart')
+  )
+
