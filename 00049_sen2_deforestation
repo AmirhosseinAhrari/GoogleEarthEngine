@@ -1,0 +1,80 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [24.664959178687543,64.99123253965863],
+  [24.66427253317973,64.99087875350403],
+  [24.66504500937602,64.98997612402353],
+  [24.664948449851483,64.98982643880142],
+  [24.665688739539593,64.98954974572945],
+  [24.666203723670453,64.98957242559722],
+  [24.666203723670453,64.98957242559722],
+  [24.66606424880168,64.99008498547678],
+  [24.664959178687543,64.99123253965863]
+  ]
+  
+var geometry = ee.Geometry.Polygon(cor)
+
+Map.centerObject(geometry)
+
+var sen = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+.filterBounds(geometry)
+.filterDate('2017','2024')
+.filter(ee.Filter.calendarRange(6,9,'month'))
+.filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
+.map(function(img){
+  var bands = img.select('B.*').multiply(0.0001)
+  var ndvi = bands.normalizedDifference(['B8','B4']).rename('ndvi')
+  return ndvi
+  .copyProperties(img, ['system:time_start', 'system:time_end'])
+  });
+
+print(
+  ui.Chart.image.series(sen, geometry, ee.Reducer.median(), 10, 'system:time_start')
+  .setChartType('ColumnChart')
+  )
+  
+var before = sen.filterDate('2018','2019').median().rename('before')
+var after = sen.filterDate('2023', '2024').median().rename('after')
+
+Map.addLayer(before.clip(geometry),[],'before',false)
+Map.addLayer(after.clip(geometry),[],'after',false)
+
+print(
+  ui.Chart.image.histogram(before, geometry, 10)
+  .setOptions({
+    title: 'before'
+    })
+  )
+  
+print(
+  ui.Chart.image.histogram(after, geometry, 10)
+  .setOptions({
+    title: 'after'
+    })
+  )
+
+
+var tree_area = sen.map(function(img){
+  var thr = img.gt(0.5);
+  var mask = thr.updateMask(thr);
+  var area = mask.multiply(ee.Image.pixelArea())
+  return area
+  .copyProperties(img, img.propertyNames())
+  });
+
+print(
+  ui.Chart.image.series(tree_area, geometry, ee.Reducer.sum(),
+  10, 'system:time_start').setChartType('ColumnChart')
+  )
+
+
+
