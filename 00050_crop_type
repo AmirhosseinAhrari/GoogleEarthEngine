@@ -1,0 +1,112 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [48.09532576624447,31.98308763719514],
+  [48.744892416635096,31.98308763719514],
+  [48.744892416635096,32.40378543571943],
+  [48.09532576624447,32.40378543571943],
+  [48.09532576624447,31.98308763719514]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+
+Map.centerObject(geometry);
+
+
+var cor2 = [48.407577810922206,32.21343415732832]
+
+var geometry2 = ee.Geometry.Point(cor2)
+
+
+var cor3 = [
+  [48.505939779916346,32.19193653242509], 
+  [48.63399916712338,32.1285761021755],
+  [48.463024435678065,32.163749487730556], 
+  [48.30874230387218,32.318129872134236]
+  ]
+
+
+var point3 = cor3.map(function(coor){
+  return ee.Feature(ee.Geometry.Point(coor))
+  })
+
+var geometry3 = ee.FeatureCollection(point3)
+
+
+
+var time_start = '2023', time_end = '2024'
+
+var landsat8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.filterDate(time_start, time_end)
+.filterBounds(geometry)
+.map(function(img){
+  var ms = img.select('SR.*')
+  var gain = ee.Number(img.get('REFLECTANCE_MULT_BAND_3'))
+  var offset = ee.Number(img.get('REFLECTANCE_ADD_BAND_2'))
+  var sr = ms.multiply(gain).add(offset)
+  var ndvi = sr.normalizedDifference(['SR_B5','SR_B4']).rename('ndvi')
+  return ndvi
+  .copyProperties(img, ['system:time_start', 'system:time_end','system:index'])
+  })
+  
+
+var landsat9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+.filterDate(time_start, time_end)
+.filterBounds(geometry)
+.map(function(img){
+  var ms = img.select('SR.*')
+  var gain = ee.Number(img.get('REFLECTANCE_MULT_BAND_3'))
+  var offset = ee.Number(img.get('REFLECTANCE_ADD_BAND_2'))
+  var sr = ms.multiply(gain).add(offset)
+  var ndvi = sr.normalizedDifference(['SR_B5','SR_B4']).rename('ndvi')
+  return ndvi
+  .copyProperties(img, ['system:time_start', 'system:time_end','system:index'])
+  })
+
+
+var sen2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+.filterDate(time_start, time_end)
+.filterBounds(geometry)
+.map(function(img){
+  var ms = img.select('B.*').multiply(0.0001);
+  var ndvi = ms.normalizedDifference(['B8','B4']).rename('ndvi')
+  return ndvi
+  .copyProperties(img, ['system:time_start', 'system:time_end','system:index'])
+  })
+
+var ndvi_collection = landsat8.merge(landsat9).merge(sen2)
+.sort('system:time_start')
+
+var month_list = ee.List.sequence(1, 12);
+
+var monthly_ndvi = ee.ImageCollection(month_list.map(function(month){
+  var month_img = ndvi_collection.filter(ee.Filter.calendarRange(month, month, 'month')).median()
+  var date = ee.Date.fromYMD(2023, month, 1)
+  return month_img
+  .set('system:time_start', date.millis())
+  .set('system:index', date.format('YYYY-MM'))
+  }));
+
+Map.addLayer(monthly_ndvi.toBands().clip(geometry),[],'ndvi',false)
+
+var chart1 = ui.Chart.image.series(monthly_ndvi, geometry2, ee.Reducer.first(), 30, 'system:time_start')
+
+print(chart1)
+
+var chart2 = ui.Chart.image.seriesByRegion(monthly_ndvi,
+geometry3, ee.Reducer.first(), 'ndvi', 30, 'system:time_start', 'system:index')
+
+
+print(chart2)
+
+
