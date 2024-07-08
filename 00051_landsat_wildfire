@@ -1,0 +1,137 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor1 = [-121.30739155546495,37.83353662375529]
+
+var geometry = ee.Geometry.Point(cor1)
+
+var table = ee.FeatureCollection("FAO/GAUL/2015/level1")
+
+var roi = table.filterBounds(geometry).map(function(feature){
+  return feature.simplify(10000)
+  })
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var viirs = ee.ImageCollection("NASA/VIIRS/002/VNP09GA")
+.select(['I1','I2'])
+.filterDate('2017-10-08','2017-10-10')
+
+Map.addLayer(viirs.toBands().clip(roi),[],'viirs_wildfire', false)
+
+
+var cor2 = [
+  [-123.45801418605573,38.81836572068789],
+  [-122.44589870754011,38.81836572068789],
+  [-122.44589870754011,39.64593638831554],
+  [-123.45801418605573,39.64593638831554],
+  [-123.45801418605573,38.81836572068789]
+  ]
+
+var geometry2 = ee.Geometry.Polygon(cor2)
+
+Map.centerObject(geometry2)
+
+var before = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.select(['SR_.*'])
+.filterDate('2016','2017')
+.filter(ee.Filter.calendarRange(8, 10, 'month'))
+.filterBounds(geometry2);
+
+Map.addLayer(before.median().clip(geometry2),{bands: ['SR_B5','SR_B4','SR_B3']},'before_rgb',false)
+
+var after = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.select(['SR_.*'])
+.filterDate('2018','2019')
+.filter(ee.Filter.calendarRange(8, 10, 'month'))
+.filterBounds(geometry2);
+
+Map.addLayer(after.median().clip(geometry2),{bands: ['SR_B5','SR_B4','SR_B3']},'after_rgb',false)
+
+
+print(before.first())
+
+var ndvi_before = before.map(function(img){
+  var gain = ee.Number(img.get('REFLECTANCE_MULT_BAND_5'))
+  var offset = ee.Number(img.get('REFLECTANCE_ADD_BAND_3'))
+  var sr = img.multiply(gain).add(offset)
+  var ndvi = sr.normalizedDifference(['SR_B5','SR_B4']).rename('ndvi_before');
+  return ndvi
+  }).median();
+  
+
+var ndvi_after = after.map(function(img){
+  var gain = ee.Number(img.get('REFLECTANCE_MULT_BAND_5'))
+  var offset = ee.Number(img.get('REFLECTANCE_ADD_BAND_3'))
+  var sr = img.multiply(gain).add(offset)
+  var ndvi = sr.normalizedDifference(['SR_B5','SR_B4']).rename('ndvi_before');
+  return ndvi
+  }).median();
+
+
+Map.addLayer(ndvi_before.clip(geometry2),[],'ndvi_before', false)
+Map.addLayer(ndvi_after.clip(geometry2),[],'ndvi_after', false)
+
+// print(
+//   ui.Chart.image.histogram(ndvi_before, geometry2, 100)
+//   .setOptions({
+//     title: 'NDVI before (2016)'
+//     })
+//   )
+
+// print(
+//   ui.Chart.image.histogram(ndvi_after, geometry2, 100)
+//   .setOptions({
+//     title: 'NDVI after (2018)'
+//     })
+//   )
+
+
+var ndvi_change = ndvi_before.subtract(ndvi_after);
+
+Map.addLayer(ndvi_change.clip(geometry2), [], 'ndvi_change', false)
+
+var water_mask = ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
+.select('label').mode().eq(0).not();
+
+Map.addLayer(water_mask.clip(geometry2), [], 'water_mask', false)
+
+var ndvi_change_masked = ndvi_change.updateMask(water_mask).rename('ndvi_change');
+
+Map.addLayer(ndvi_change_masked.clip(geometry2), [], 'ndvi_change_masked', false)
+
+Export.image.toDrive({
+  image: ndvi_change_masked.clip(geometry2),
+  description: 'wildfire_change', 
+  scale: 100, 
+  maxPixels: 1e13, 
+  region: geometry2, 
+  crs: 'EPSG:4326'
+  })
+
+// print(
+//   ui.Chart.image.histogram(ndvi_change_masked, geometry2, 100)
+//   )
+
+
+var thr = ndvi_change_masked.gt(0.1);
+var mask = thr.updateMask(thr);
+
+Map.addLayer(mask.clip(geometry2),[],'mask',false)
+
+var area = mask.multiply(ee.Image.pixelArea().divide(1e6));
+
+var final_area = ee.Number(area.reduceRegion(ee.Reducer.sum(), geometry2, 1000).values().get(0))
+
+print(final_area)
+
+
