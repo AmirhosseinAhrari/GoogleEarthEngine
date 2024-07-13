@@ -1,0 +1,62 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor1 = [
+  [-113.80502319704019,42.704955393175936],
+  [-113.56057739625894,42.704955393175936],
+  [-113.56057739625894,42.862689736716995],
+  [-113.80502319704019,42.862689736716995],
+  [-113.80502319704019,42.704955393175936]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor1)
+
+Map.centerObject(geometry)
+
+var time_start = '2023', time_end = '2024'
+
+var landsat8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.filterDate(time_start, time_end)
+.filterBounds(geometry)
+
+var landsat9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+.filterDate(time_start, time_end)
+.filterBounds(geometry)
+
+var landsat = landsat8.merge(landsat9).sort('system:time_start')
+.filter(ee.Filter.calendarRange(5,9,'month'))
+.filter(ee.Filter.lt('CLOUD_COVER', 45))
+
+var ndmi = landsat.map(function(img){
+  var bands = img.select('SR_B.*')
+  var gain  = ee.Number(img.get('REFLECTANCE_MULT_BAND_1'))
+  var offset = ee.Number(img.get('REFLECTANCE_ADD_BAND_1'))
+  var ms = bands.multiply(gain).add(gain)
+  var ndmi = ms.normalizedDifference(['SR_B5','SR_B6']).rename('NDMI')
+  var mask = ndmi.gt(0)
+  return ndmi.updateMask(mask).rename('ndmi')
+  .copyProperties(img, img.propertyNames())
+  })
+
+
+Map.addLayer(ndmi.toBands().clip(geometry), {},'ndmi',false)
+
+
+
+var cor2 = [-113.77680574839223,42.76979339207935]
+
+var geometry = ee.Geometry.Point(cor2)
+
+
+print(
+  ui.Chart.image.series(ndmi, geometry, ee.Reducer.first(), 30, 'system:time_start')
+  )
