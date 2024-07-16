@@ -1,0 +1,60 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [24.852452283823133,60.25776822930124]
+
+var geometry = ee.Geometry.Point(cor)
+
+var table = ee.FeatureCollection("FAO/GAUL/2015/level1")
+
+
+var roi = table.filterBounds(geometry).map(function(feature){
+  return feature.simplify(1000)
+  })
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+
+var modis = ee.ImageCollection("MODIS/061/MOD10A1")
+.select('NDSI_Snow_Cover')
+.filterDate('2023', '2024');
+
+
+
+
+var days = 7
+var mill = ee.Number(days).multiply(1000 * 24 * 3600)
+var filter = ee.Filter.maxDifference({
+  difference: mill, leftField: 'system:time_start', rightField: 'system:time_start'
+  });
+var join = ee.Join.saveAll('images')
+var join_collection = ee.ImageCollection(join.apply(modis, modis, filter))
+
+var smooth_collection = join_collection.map(function(img){
+  var images = ee.ImageCollection.fromImages(img.get('images')).reduce(ee.Reducer.percentile([75])).rename('smoothed')
+  return img.rename('original').addBands(images)
+  })
+  
+print(
+  ui.Chart.image.series(smooth_collection, roi, ee.Reducer.mean(), 500, 'system:time_start')
+  )
+
+Map.addLayer(smooth_collection.toBands().clip(roi),[],'modis_ndsi_smoothed',false)
+
+
+var snow_duration = smooth_collection.select('smoothed').map(function(img){
+  var thr = img.gt(40)
+  return thr
+  }).sum();
+  
+Map.addLayer(snow_duration.clip(roi), [],'snow_duration',false)
+
