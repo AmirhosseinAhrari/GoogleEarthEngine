@@ -1,0 +1,158 @@
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+
+
+var cor1 = [
+  [42.49966365960427,23.30989641960812],
+  [64.47231990960427,23.30989641960812],
+  [64.47231990960427,42.47851790347444],
+  [42.49966365960427,42.47851790347444],
+  [42.49966365960427,23.30989641960812]
+  ]
+
+var geometry  = ee.Geometry.Polygon(cor1)
+
+
+
+var time_start = '2023', time_end = '2024'
+
+var pr = ee.ImageCollection("NOAA/PERSIANN-CDR")
+.filterDate(time_start, time_end);
+
+var month_list = ee.List.sequence(1,12)
+
+var pr_monthly = ee.ImageCollection(month_list.map(function(month){
+  var month_img = pr.filter(ee.Filter.calendarRange(month, month, 'month')).sum()
+  var date = ee.Date.fromYMD(2023, month, 1)
+  var resample = month_img.resample().reproject({crs: month_img.projection().crs(), scale: 500})
+  return resample.toInt()
+  .set('system:time_start', date.millis())
+  .set('system:index', date.format('YYYY-MM-dd'))
+  }))
+
+// independent variabls
+
+var lc = ee.ImageCollection("MODIS/061/MCD12Q1")
+.mode().select('LC_Type1')
+
+var dem = ee.Image("USGS/GTOPO30")
+
+var ndvi = ee.ImageCollection("MODIS/061/MOD13A1")
+.select('NDVI')
+.filterDate(time_start, time_end)
+
+var ndvi_monthly = ee.ImageCollection(month_list.map(function(month){
+  var month_img = ndvi.filter(ee.Filter.calendarRange(month, month, 'month')).median()
+  var date = ee.Date.fromYMD(2023, month, 1);
+  return month_img.multiply(0.0001)
+  .set('system:time_start', date.millis())
+  .set('system:index', date.format('YYYY-MM-dd'))
+  }))
+  
+var temp = ee.ImageCollection("MODIS/061/MOD11A2")
+.select('LST_Day_1km')
+.filterDate(time_start, time_end)
+
+
+var temp_monthly = ee.ImageCollection(month_list.map(function(month){
+  var month_img = temp.filter(ee.Filter.calendarRange(month, month, 'month')).median()
+  var date = ee.Date.fromYMD(2023, month, 1);
+  return month_img.multiply(0.02)
+  .set('system:time_start', date.millis())
+  .set('system:index', date.format('YYYY-MM-dd'))
+  }))
+  
+
+var collection = ndvi_monthly.combine(temp_monthly).combine(pr_monthly).map(function(img){
+  return img.addBands(dem).addBands(lc)
+  .copyProperties(img, img.propertyNames())
+  })
+
+// modelling 
+
+
+var pr_model = collection.map(function(img){
+  var band_names = img.bandNames();
+  var band_names_indep  = img.bandNames().remove('precipitation')
+  
+  var training = img.stratifiedSample({
+    numPoints: 100, classBand: 'precipitation', region: geometry, scale: 1000
+    });
+    
+  var model = ee.Classifier.smileGradientTreeBoost(100).train({
+    features: training, classProperty: 'precipitation', inputProperties: band_names
+    }).setOutputMode('REGRESSION');
+    
+  var pr1000 = img.select(band_names_indep).classify(model)
+  
+  return pr1000.rename('pr1000').addBands(img.select(['precipitation'],['pr27000']))
+  .copyProperties(img, img.propertyNames())
+  
+  });
+  
+var cor = [45.9347467400223,36.93317086167252]
+
+var geometry2 = ee.Geometry.Point(cor)
+
+var roi = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_5")
+.filterBounds(geometry2).map(function(feature){
+  return feature.simplify(1000)
+  })
+  
+
+  
+Map.centerObject(roi)
+Map.addLayer(roi)
+  
+Map.addLayer(pr_model.select(['pr27000']).toBands().clip(roi), [], 'pr_initial', false)
+Map.addLayer(pr_model.select(['pr1000']).toBands().clip(roi), [], 'pr_sharpened', false)
+
+
+var pr_mean = pr_model.select('pr1000').mean()
+
+var pr_1km_cor = pr_model.map(function(img){
+  return img.select('pr1000').add(img.select('pr27000').subtract(pr_mean))
+  .copyProperties(img,img.propertyNames())
+  })
+
+
+Map.addLayer(pr_1km_cor.toBands().clip(roi), [], 'pr_sharpened_cor', false)
+
+Export.image.toDrive({
+  image:  pr_1km_cor.toBands().clip(roi), 
+  description: 'pr_1km_cor_v2', 
+  region: roi, 
+  crs: 'EPSG:4326', 
+  folder: 'test', 
+  scale: 1000
+  })
+
+
+Export.image.toDrive({
+  image:  pr_model.select(['pr27000']).toBands().clip(roi), 
+  description: 'pr_27km', 
+  region: roi, 
+  crs: 'EPSG:4326', 
+  folder: 'test', 
+  scale: 27000
+  })
+
+Export.image.toDrive({
+  image:  pr_model.select(['pr1000']).toBands().clip(roi), 
+  description: 'pr_1km', 
+  region: roi, 
+  crs: 'EPSG:4326', 
+  folder: 'test', 
+  scale: 1000
+  })
+
+
