@@ -1,0 +1,147 @@
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+
+
+var cor = [
+  [45.69105798238498,28.274725424381415],
+  [52.45863610738498,28.274725424381415],
+  [52.45863610738498,34.24300069681132], 
+  [45.69105798238498,34.24300069681132],
+  [45.69105798238498,28.274725424381415]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+
+Map.centerObject(geometry)
+
+var time_start = ee.Date('2023'), time_end = ee.Date('2024')
+
+var sm = ee.ImageCollection("NASA/SMAP/SPL3SMP_E/006")
+.select('soil_moisture_am')
+.filterDate(time_start, time_end)
+
+var list_10days = ee.List.sequence(0, time_end.difference(time_start, 'day'), 10)
+    .map(function(i){
+      return ee.Date.fromYMD(2023, 1, 1).advance(i, 'days')
+      })
+
+var sm_10days = ee.ImageCollection(list_10days.map(function(start_date){
+  start_date = ee.Date(start_date)
+  var end_date = start_date.advance(10, 'days')
+  var img = sm.filterDate(start_date, end_date).median()
+  var resample = img.resample().reproject({crs: img.projection().crs(), scale: 1000})
+  return resample.multiply(100).toInt()
+  .set('system:time_start', start_date.millis())
+  .set('system:time_end', end_date.millis())
+  .set('system:index', start_date.format('YYYY-MM-dd'))
+  }));
+  
+Map.addLayer(sm_10days.toBands().clip(geometry), [], 'sm_9km', false)
+
+var temp = ee.ImageCollection("MODIS/061/MOD11A1")
+.select('LST_.*')
+.filterDate(time_start, time_end)
+
+
+var temp_10days = ee.ImageCollection(list_10days.map(function(start_date){
+  start_date = ee.Date(start_date)
+  var end_date = start_date.advance(10, 'days')
+  var img = temp.filterDate(start_date, end_date).mean()
+  var lst_day = img.select('LST_Day_1km').multiply(0.02)
+  var lst_night = img.select('LST_Night_1km').multiply(0.02)
+  var lst_delta = lst_day.subtract(lst_night).rename('LST_delta')
+  return lst_day.addBands(lst_delta)
+  .set('system:time_start', start_date.millis())
+  .set('system:time_end', end_date.millis())
+  .set('system:index', start_date.format('YYYY-MM-dd'))
+  }));
+
+
+var sr = ee.ImageCollection("MODIS/061/MOD09GA")
+.select('sur.*').combine(temp.select('LST_Day.*'))
+.filterDate(time_start, time_end)
+.map(function(img){
+  var masked_bands = img.select('sur.*').updateMask(img.select('LST.*')).multiply(0.0001)
+  var ndvi = masked_bands.normalizedDifference(['sur_refl_b02','sur_refl_b01']).rename('ndvi')
+  return masked_bands.select('sur_refl_b0[5-7]').addBands(ndvi)
+  .copyProperties(img, img.propertyNames())
+  })
+  
+var sr_10days = ee.ImageCollection(list_10days.map(function(start_date){
+  start_date = ee.Date(start_date)
+  var end_date = start_date.advance(10, 'days')
+  var ndvi = sr.select('ndvi').filterDate(start_date, end_date).max()
+  var ms = sr.select('sur.*').filterDate(start_date, end_date).median()
+  return ms.addBands(ndvi)
+  .set('system:time_start', start_date.millis())
+  .set('system:time_end', end_date.millis())
+  .set('system:index', start_date.format('YYYY-MM-dd'))
+  }));
+  
+
+Map.addLayer(sr.toBands().clip(geometry),[],'sr',false)
+
+var landcover = ee.ImageCollection("MODIS/061/MCD12Q1").mode().select('LC_Type1')
+
+var collection = sr_10days.combine(temp_10days).combine(sm_10days)
+    .map(function(img){
+      return img.addBands(landcover)
+      .copyProperties(img, img.propertyNames())
+      })
+
+var sm_1km = collection.map(function(img){
+  
+  var training_data = img.stratifiedSample({
+    numPoints: 10, classBand: 'soil_moisture_am', region: geometry, scale: 1000
+    });
+    
+  var model = ee.Classifier.smileGradientTreeBoost(80).train({
+    features: training_data, classProperty: 'soil_moisture_am', inputProperties: img.bandNames()
+    }).setOutputMode('REGRESSION');
+    
+  var band_name = img.bandNames().remove('soil_moisture_am')  
+    
+  var result = img.select(band_name).classify(model).rename('SM_1km').divide(100.0).toFloat()
+  
+  return result.addBands(img.select(['soil_moisture_am'],['SM_9km']))
+  .copyProperties(img, ['system:time_start', 'system:time_end'])
+  
+  })
+
+var sm_1km_mean = sm_1km.select('SM_1km').mean()
+
+var sm_cor =  sm_1km.map(function(img){
+  var sm1km = img.select('SM_1km')
+  var sm9km = img.select('SM_9km').divide(100.0).toFloat()
+  var cor = sm1km.add(sm9km.subtract(sm_1km_mean)).rename('SM_1km_cor')
+  return cor
+  .copyProperties(img, img.propertyNames())
+  })
+
+
+print(sm_cor)
+
+
+Map.addLayer(sm_cor.toBands().clip(geometry), [], 'sm_1km', false)
+
+
+Export.image.toDrive({
+  image: sm_cor.toBands().clip(geometry), 
+  description: 'sm_1km_cor', 
+  folder: 'test', 
+  region: geometry, 
+  scale: 1000, 
+  crs: 'EPSG:4326'
+  })
+
+
