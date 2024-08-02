@@ -1,0 +1,93 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/ 
+ 
+var cor = [
+  [-14.272124443540445,32.61346819689535],
+  [59.38021930645955,32.61346819689535],
+  [59.38021930645955,71.98986115311568],
+  [-14.272124443540445,71.98986115311568],
+  [-14.272124443540445,32.61346819689535]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+ 
+var time_start = '2020', time_end = '2021'
+ 
+var grace = ee.ImageCollection("NASA/GRACE/MASS_GRIDS_V03/MASCON_CRI")
+.select('lwe_thickness')
+.filterDate(time_start, time_end)
+.map(function(img){
+  var date = img.date().format('YYYY-MM')
+  return img.toInt()
+  .copyProperties(img, img.propertyNames())
+  .set('date', date)
+  })
+  
+Map.addLayer(grace.toBands().clip(geometry), [], 'grace55km', false);
+
+var fldas = ee.ImageCollection("NASA/FLDAS/NOAH01/C/GL/M/V001")
+.select('Snow.*','SWE_inst','SoilMoi00_10cm_tavg','Rainf_f_tavg')
+.filterDate(time_start, time_end)
+.map(function(img){
+  var date = img.date().format('YYYY-MM')
+  return img
+  .copyProperties(img, img.propertyNames())
+  .set('date', date)
+  })
+
+var landcover = ee.ImageCollection("MODIS/061/MCD12Q1")
+.select('LC_Type1').mode()
+
+var join = ee.Join.inner()
+var filter = ee.Filter.equals({
+  leftField: 'date', rightField: 'date'
+  })
+  
+var join_collection = ee.ImageCollection(join.apply(fldas, grace, filter))
+
+var collection = join_collection.map(function(feature){
+  var primary = ee.Image(feature.get('primary'))
+  var secondary = ee.Image(feature.get('secondary'))
+  return primary.addBands(secondary).addBands(landcover)
+  });
+
+var grace10km = collection.map(function(img){
+  
+  var training = img.stratifiedSample({
+    numPoints: 100, classBand: 'lwe_thickness', region: geometry, scale: 10000
+    });
+    
+  var model = ee.Classifier.smileRandomForest(80).train({
+    features: training, classProperty: 'lwe_thickness', inputProperties: img.bandNames()
+    }).setOutputMode('REGRESSION');
+    
+  var bands = img.bandNames().remove('lwe_thickness')
+  
+  var result = img.select(bands).classify(model).rename('grace10km').toFloat()
+    
+  return result
+  .copyProperties(img,img.propertyNames())
+  
+  })
+
+
+print(grace10km)
+
+Map.addLayer(grace10km.toBands().clip(geometry), [], 'grace10km', false);
+
+Export.image.toDrive({
+  image: grace10km.toBands().clip(geometry),
+  description: 'grace10km', 
+  region: geometry, 
+  scale: 10000, 
+  crs: 'EPSG:4326', 
+  folder: 'test'
+  })
