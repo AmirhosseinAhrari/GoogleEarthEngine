@@ -1,0 +1,120 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/ 
+ 
+var cor = [
+  [1.921468397822803,52.382854413832085],
+  [48.3277183978228,52.382854413832085],
+  [48.3277183978228,71.58428687506868],
+  [1.921468397822803,71.58428687506868],
+  [1.921468397822803,52.382854413832085]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+ 
+Map.centerObject(geometry);
+
+var biomass = ee.ImageCollection("NASA/ORNL/biomass_carbon_density/v1")
+.select('agb').first().toInt()
+
+var time_start = '2010', time_end = '2011'
+
+var ndvi = ee.ImageCollection("MODIS/061/MOD13Q1")
+.select('NDVI','EVI')
+.filterDate(time_start, time_end)
+.filter(ee.Filter.calendarRange(5,9,'month'))
+.map(function(img){
+  return img.multiply(0.0001)
+  .copyProperties(img, img.propertyNames())
+  }).median()
+  
+Map.addLayer(ndvi.clip(geometry), [],'ndvi_evi',false)
+
+var lai = ee.ImageCollection("MODIS/061/MOD15A2H")
+.select('Lai_500m','Fpar_500m')
+.filterDate(time_start, time_end)
+.filter(ee.Filter.calendarRange(5,9,'month'))
+.map(function(img){
+  var lai = img.select('Lai_500m').multiply(0.1)
+  var fpar = img.select('Fpar_500m').multiply(0.01)
+  return lai.addBands(fpar)
+  .copyProperties(img, img.propertyNames())
+  }).median();
+  
+Map.addLayer(lai.clip(geometry),[],'lai',false)
+
+var landcover = ee.ImageCollection("MODIS/061/MCD12Q1")
+.select('LC_Type1').mode();
+
+var dem = ee.Terrain.products(ee.Image("USGS/GTOPO30").select('elevation'))
+
+var dataset = ee.Image.cat([biomass,ndvi, lai, landcover])
+
+var training = dataset.stratifiedSample({
+  numPoints: 100, classBand: 'agb', region: geometry, scale: 500
+  });
+  
+var model = ee.Classifier.smileRandomForest(80).train({
+  features: training, classProperty: 'agb', inputProperties: dataset.bandNames()
+  }).setOutputMode('REGRESSION')
+
+var predictors = dataset.bandNames().remove('agb')
+
+var predicted_agb = dataset.select(predictors).classify(model).rename('agb_predicted');
+
+Map.addLayer(dataset.select('agb').clip(geometry), [], 'original_agb', false)
+
+Map.addLayer(predicted_agb.clip(geometry), [], 'predicted_agb', false)
+
+
+var cor = predicted_agb.addBands(dataset.select('agb')).reduceRegion({
+  reducer: ee.Reducer.pearsonsCorrelation(), geometry: geometry, scale: 10000
+  })
+  
+var r_square = ee.Number(cor.values().get(0)).pow(2);
+
+print(cor.values().get(0))
+
+print(r_square)
+
+
+// prediction 2020
+
+var ndvi2020 = ee.ImageCollection("MODIS/061/MOD13Q1")
+.select('NDVI','EVI')
+.filterDate('2020', '2021')
+.filter(ee.Filter.calendarRange(5,9,'month'))
+.map(function(img){
+  return img.multiply(0.0001)
+  .copyProperties(img, img.propertyNames())
+  }).median()
+  
+
+var lai2020 = ee.ImageCollection("MODIS/061/MOD15A2H")
+.select('Lai_500m','Fpar_500m')
+.filterDate('2020', '2021')
+.filter(ee.Filter.calendarRange(5,9,'month'))
+.map(function(img){
+  var lai = img.select('Lai_500m').multiply(0.1)
+  var fpar = img.select('Fpar_500m').multiply(0.01)
+  return lai.addBands(fpar)
+  .copyProperties(img, img.propertyNames())
+  }).median();
+  
+  
+var dataset2020 = ee.Image.cat([ndvi2020, lai2020, landcover])
+
+
+var biomass2020 = dataset2020.classify(model).rename('agb2020')
+
+Map.addLayer(biomass2020.clip(geometry),[],'biomass2020',false)
+
+
+
