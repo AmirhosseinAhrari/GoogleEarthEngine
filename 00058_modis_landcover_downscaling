@@ -1,0 +1,97 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/ 
+ 
+
+var cor = [45.68929902130395,37.11033465203267]
+
+var geometry = ee.Geometry.Point(cor)
+ 
+var table = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_5")
+ 
+var roi = table.filterBounds(geometry).map(function(feature){
+  return feature.simplify(3000)
+  })
+ 
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var time_start = '2020', time_end = '2021'
+
+var modis = ee.ImageCollection("MODIS/061/MCD12Q1")
+.select('LC_Type1')
+.filterDate(time_start, time_end).first();
+
+var vis = {
+  min: 1.0,
+  max: 17.0,
+  palette: [
+    '05450a', '086a10', '54a708', '78d203', '009900', 'c6b044', 'dcd159',
+    'dade48', 'fbff13', 'b6ff05', '27ff87', 'c24f44', 'a5a5a5', 'ff6d4c',
+    '69fff8', 'f9ffa4', '1c0dff'
+  ],
+};
+
+Map.addLayer(modis.clip(roi),vis, 'modis_lc_500m',false)
+
+
+// predictor 
+
+var landsat  = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.select('SR_B.*')
+.filterDate(time_start, time_end)
+.filterBounds(roi)
+.filter(ee.Filter.lt('CLOUD_COVER', 10))
+.map(function(img){
+  var gain = ee.Number(img.get('REFLECTANCE_MULT_BAND_1'))
+  var offset = ee.Number(img.get('REFLECTANCE_ADD_BAND_1'))
+  var sr = img.multiply(gain).add(offset)
+  var ndvi = sr.normalizedDifference(['SR_B5','SR_B4']).rename('ndvi')
+  var ndwi = sr.normalizedDifference(['SR_B3','SR_B5']).rename('ndwi')
+  var swir = sr.select('SR_B[6-7]')
+  return ee.Image.cat([ndvi, ndwi, swir])
+  });
+
+var landsat_stat = landsat.reduce(ee.Reducer.percentile([25,50,75])) 
+
+var image_2020 = ee.Image('JRC/GHSL/P2023A/GHS_BUILT_S/2020')
+var built_2020 = image_2020.select('built_surface');
+var visParams = {min: 0.0, max: 8000.0, palette: ['000000', 'FFFFFF']};
+
+Map.addLayer(built_2020.clip(roi), visParams, 'urban',false);
+
+
+var sar = ee.ImageCollection("COPERNICUS/S1_GRD")
+.filterDate(time_start, time_end)
+.filterBounds(roi)
+.filter(ee.Filter.listContains('transmitterReceiverPolarisation','VV'))
+.filter(ee.Filter.eq('instrumentMode','IW'))
+.filter(ee.Filter.eq('orbitProperties_pass','DESCENDING')).select('VV')
+.mean();
+
+var dataset = landsat_stat.addBands(built_2020).addBands(modis).addBands(sar)
+
+var training_data = dataset.stratifiedSample({
+  numPoints: 100, classBand: 'LC_Type1', region: roi, scale: 100
+  });
+  
+var model = ee.Classifier.libsvm().train({
+  features: training_data, classProperty: 'LC_Type1', inputProperties: dataset.bandNames()
+  });
+  
+
+var predictors = dataset.bandNames().remove('LC_Type1')
+
+var modis30 = dataset.select(predictors).classify(model);
+
+
+print(modis30)
+  
+Map.addLayer(modis30.clip(roi),vis, 'modis_lc_50m',false)
