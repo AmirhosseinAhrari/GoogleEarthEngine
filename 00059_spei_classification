@@ -1,0 +1,79 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/ 
+ 
+
+
+var cor = [
+  [43.72779439368948,24.384894113007075],
+  [63.50318501868948,24.384894113007075],
+  [63.50318501868948,39.992077187814196],
+  [43.72779439368948,39.992077187814196],
+  [43.72779439368948,24.384894113007075]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+var spei = ee.ImageCollection("CSIC/SPEI/2_9")
+.select('SPEI_12_month')
+.filterDate('1980','2023')
+
+print(
+  ui.Chart.image.series(spei, geometry, ee.Reducer.mean(), 55000, 'system:time_start')
+  )
+  
+var spei_mean = spei.map(function(img){
+  
+  var mean = ee.Number(img.reduceRegion({
+    reducer: ee.Reducer.mean(), geometry: geometry, scale: 55000
+    }).values().get(0))
+  
+  return img
+  .copyProperties(img, img.propertyNames())
+  .set('spei', mean)
+  
+  })
+  
+
+var spei_class = spei_mean.map(function(img){
+  var spei_ave = ee.Number(img.get('spei'))
+  
+  
+  var classes = ee.Algorithms.If(spei_ave.lte(-2.0), 'Severe Drought', 
+                ee.Algorithms.If(spei_ave.gt(-2.0).and(spei_ave.lte(-1)), 'Moderate Drought',
+                ee.Algorithms.If(spei_ave.gt(-1).and(spei_ave.lte(0)), 'Mild Drought', 
+                ee.Algorithms.If(spei_ave.gt(0).and(spei_ave.lte(1)), 'Normal Drought',
+                ee.Algorithms.If(spei_ave.gt(1), 'No Drought')))))
+                
+  return img
+  .copyProperties(img, img.propertyNames())
+  .set('spei_class', ee.String(classes))
+  
+  })
+  
+var drought = spei_class.map(function(img){
+  var class_name = ee.String(img.get('spei_class'))
+  return img.rename(class_name)
+  .copyProperties(img, img.propertyNames())
+  });
+  
+  
+print(
+  ui.Chart.image.series(drought, geometry, ee.Reducer.mean(), 55000, 'system:time_start')
+  .setChartType('ScatterChart')
+  .setOptions({
+    title: 'Drought Monitoring', 
+    pointSize: 3
+    })
+  )
+
+
+
