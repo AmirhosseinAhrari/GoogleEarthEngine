@@ -1,0 +1,156 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/ 
+
+
+
+var cor = [
+  [48.10178521249212,30.724369816411947],
+  [49.06308892342962,30.724369816411947],
+  [49.06308892342962,31.444134120146206],
+  [48.10178521249212,31.444134120146206],
+  [48.10178521249212,30.724369816411947]
+  ]
+
+
+var geometry = ee.Geometry.Polygon(cor)
+
+Map.centerObject(geometry);
+
+var time_start = ee.Date('2017')
+var time_end = ee.Date('2024')
+var time_dif = time_end.difference(time_start, 'day')
+
+var sen1 = ee.ImageCollection("COPERNICUS/S1_GRD")
+.filterDate(time_start, time_end)
+.filterBounds(geometry)
+.filter(ee.Filter.listContains('transmitterReceiverPolarisation','VV'))
+.filter(ee.Filter.eq('instrumentMode','IW')).select('VV')
+
+
+print(sen1.aggregate_array('orbitProperties_pass').distinct())
+
+
+var asc = sen1
+.filter(ee.Filter.eq('orbitProperties_pass','ASCENDING'))
+
+var des = sen1
+.filter(ee.Filter.eq('orbitProperties_pass','DESCENDING'))
+
+
+var list_dates = ee.List.sequence(0, time_dif, 10).map(function(interval){
+  return ee.Date.fromYMD(2017, 1, 1).advance(interval, 'days')
+  })
+
+
+var asc_10days = ee.ImageCollection(list_dates.map(function(dates){
+  var start_date  = ee.Date(dates)
+  var end_date = start_date.advance(10, 'days')
+  var composite = asc.filterDate(start_date, end_date).mean()
+  var bands = composite.bandNames().size()
+  return composite
+  .set('system:time_start', start_date.millis())
+  .set('system:time_end', end_date.millis())
+  .set('band_number', bands)
+  })).filter(ee.Filter.eq('band_number',1));
+  
+var des_10days = ee.ImageCollection(list_dates.map(function(dates){
+  var start_date  = ee.Date(dates)
+  var end_date = start_date.advance(10, 'days')
+  var composite = des.filterDate(start_date, end_date).mean()
+  var bands = composite.bandNames().size()
+  return composite
+  .set('system:time_start', start_date.millis())
+  .set('system:time_end', end_date.millis())
+  .set('band_number', bands)
+  })).filter(ee.Filter.eq('band_number',1));
+  
+
+var asc_sigma = asc_10days.map(function(img){
+  var sigma = ee.Image(10).pow(img.divide(10)).rename('sigma')
+  var speckel = sigma.focalMean(30, 'square', 'meters');
+  return speckel
+  .copyProperties(img, img.propertyNames())
+  });
+  
+var des_sigma = des_10days.map(function(img){
+  var sigma = ee.Image(10).pow(img.divide(10)).rename('sigma')
+  var speckel = sigma.focalMean(30, 'square', 'meters');
+  return speckel
+  .copyProperties(img, img.propertyNames())
+  });
+  
+  
+var water_mask = ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1").select('label')
+.filterDate(time_start, time_end)
+.filterBounds(geometry).mode().eq(0).not()
+
+var urban_mask = ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1").select('label')
+.filterDate(time_start, time_end)
+.filterBounds(geometry).mode().eq(6).not()
+
+
+var asc_min = asc_sigma.min()
+var asc_max = asc_sigma.max()
+
+var asc_sm = asc_sigma.map(function(img){
+  var index = (img.subtract(asc_min)).divide(asc_max.subtract(asc_min))
+  var date = img.date().format('YYYY-MM-dd')
+  return index.multiply(water_mask).multiply(urban_mask).rename('sm_asc')
+  .copyProperties(img,['system:time_start'])
+  .set('date', ee.String(date))
+  })
+  
+Map.addLayer(asc_sm.filterDate('2020','2021').toBands().clip(geometry),[],'sm_asc',false)
+
+var cor2 = [
+  [48.54810479257024,30.974198964042525],
+  [48.56321099374212,30.974198964042525],
+  [48.56321099374212,30.984795502612585],
+  [48.54810479257024,30.984795502612585],
+  [48.54810479257024,30.974198964042525]
+  ]
+
+var geometry2 = ee.Geometry.Polygon(cor2)
+
+print(
+  ui.Chart.image.series(asc_sm, geometry2, ee.Reducer.mean(), 30, 'system:time_start')
+  )
+
+
+
+var des_min = des_sigma.min()
+var des_max = des_sigma.max()
+
+var des_sm = des_sigma.map(function(img){
+  var index = (img.subtract(des_min)).divide(des_max.subtract(des_min))
+  var date = img.date().format('YYYY-MM-dd')
+  return index.multiply(water_mask).multiply(urban_mask).rename('sm_asc')
+  .copyProperties(img,['system:time_start'])
+  .set('date', ee.String(date))
+  })
+  
+Map.addLayer(des_sm.filterDate('2020','2021').toBands().clip(geometry),[],'sm_des',false)
+
+
+print(
+  ui.Chart.image.series(des_sm, geometry2, ee.Reducer.mean(), 30, 'system:time_start')
+  )
+
+
+Export.image.toDrive({
+  image: des_sm.filterDate('2020','2021').toBands().clip(geometry),
+  description: 'des_sm', 
+  scale: 30, 
+  region: geometry, 
+  crs: 'EPSG:4326', 
+  folder: 'test', 
+  maxPixels: 1e13
+  })
