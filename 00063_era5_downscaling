@@ -1,0 +1,108 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/ 
+
+
+var cor = [
+  [43.75779800247099,32.06441993671384],
+  [54.04100112747099,32.06441993671384],
+  [54.04100112747099,40.061675939018706],
+  [43.75779800247099,40.061675939018706],
+  [43.75779800247099,32.06441993671384]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+var time_start = '2010' , time_end =  '2020'
+
+// original 10km
+
+var era = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
+.select('skin_temperature')
+.filterDate(time_start, time_end)
+
+// predictor
+
+var mod =  ee.ImageCollection("MODIS/061/MOD11A1")
+.select('LST_Day_1km')
+.filterDate(time_start, time_end)
+
+Map.addLayer(era.first(),[],'era5', false)
+Map.addLayer(mod.first(),[],'mod', false)
+
+// join
+
+var join = ee.Join.inner()
+var filter = ee.Filter.equals({
+  leftField: 'system:time_start', rightField: 'system:time_start'
+  });
+
+var join_collection = ee.ImageCollection(join.apply(era, mod, filter));
+
+var collection = join_collection.map(function(img){
+  var era_img = ee.Image(img.get('primary'))
+  var era_resample = era_img.resample().reproject({crs: 'EPSG:4326', scale: 1000})
+  var mod_img = ee.Image(img.get('secondary')).multiply(0.02)
+  var cons = ee.Image.constant(1)
+  var stack = ee.Image.cat([era_resample,cons, mod_img])
+  return stack
+  })
+
+// modelling (regression)
+
+var model = collection.reduce(ee.Reducer.linearRegression(2, 1))
+var gain = model.select('coefficients').arrayGet([0,0])
+var offset = model.select('coefficients').arrayGet([1,0])
+
+// prediction 
+
+var era1970 = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
+.select('skin_temperature')
+.filterDate('1970','1971')
+.map(function(img){
+  var resampled = img.resample().reproject({crs: 'EPSG:4326', scale: 1000})
+  var predicted = resampled.multiply(gain).add(offset).rename('predicted') // 1km
+  return resampled.addBands(predicted)
+  .copyProperties(img, img.propertyNames())
+  })
+
+
+Map.addLayer(era1970.select('skin_temperature').first().clip(geometry), {min: 259 , max: 283}, 'original', false)  
+Map.addLayer(era1970.select('predicted').first().clip(geometry), {min: 260 , max: 290}, 'predicted', false)  
+
+// cor = model + (original - model_mean)
+
+var prediction_mean = era1970.select('predicted').mean()
+
+var cor = era1970.map(function(img){
+  var original = img.select('skin_temperature')
+  var predicted = img.select('predicted')
+  var index = predicted.add(original.subtract(prediction_mean))
+  return index
+  .copyProperties(img,img.propertyNames())
+  });
+  
+Map.addLayer(cor.first().clip(geometry), {min: 260 , max: 290}, 'cor', false)  
+
+
+
+Export.image.toDrive({
+  image: cor.first(),
+  description: 'era1km_1970_cor', 
+  scale: 1000, 
+  region: geometry, 
+  crs: 'EPSG:4326', 
+  maxPixels: 1e13, 
+  folder: 'test'
+  })
+
+
+
+
