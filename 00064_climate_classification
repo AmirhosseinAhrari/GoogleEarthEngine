@@ -1,0 +1,83 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/ 
+
+var cor = [
+  [43.35677604381791,23.674610360519907],
+  [63.30794791881791,23.674610360519907],
+  [63.30794791881791,40.069578895767485],
+  [43.35677604381791,40.069578895767485],
+  [43.35677604381791,23.674610360519907]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+Map.centerObject(geometry)
+
+var era = ee.ImageCollection("ECMWF/ERA5_LAND/MONTHLY_AGGR")
+.filterDate('2000','2020')
+
+var climate = era.select('temperature_2m','total_precipitation_sum')
+
+var climate_stack = climate.toBands()
+
+var sample = climate_stack.sample({
+  region: geometry, scale: 10000, numPixels: 100
+  });
+  
+var model = ee.Clusterer.wekaKMeans(4).train(sample)
+
+var climate_map = climate_stack.cluster(model).rename('climate_map');
+
+Map.addLayer(climate_map.clip(geometry), {min:0, max:3}, 'climate map', false)
+
+
+Export.image.toDrive({
+  image: climate_map, 
+  description: 'climate_map', 
+  scale: 10000, 
+  region: geometry, 
+  crs: 'EPSG:4326', 
+  folder: 'test'
+  })
+  
+var area_img = ee.Image.pixelArea().divide(1e6).addBands(climate_map);
+
+print(
+  ui.Chart.image.byClass(area_img, 'climate_map', geometry, ee.Reducer.sum(),
+  10000)
+  )  
+
+var temp = era.select('temperature_2m').mean().subtract(273.15)
+
+var temp_map = temp.addBands(climate_map)
+
+var temp_stat = temp_map.reduceRegion({
+  reducer: ee.Reducer.minMax().group(1), geometry: geometry, scale: 10000
+  });
+  
+var class3 = climate_map.eq(3)
+  
+var ndvi = ee.ImageCollection("MODIS/061/MOD13A1")
+.filterDate('2002','2020')
+.map(function(img){
+  var band = img.select('NDVI').multiply(0.0001);
+  return band.updateMask(class3)
+  .copyProperties(img, img.propertyNames())
+  });
+
+print(
+  ui.Chart.image.series(ndvi, geometry, ee.Reducer.mean(), 10000, 'system:time_start')
+  )
+
+
+
+  
