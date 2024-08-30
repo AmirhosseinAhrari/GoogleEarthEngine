@@ -1,0 +1,62 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/ 
+
+
+var time_start = ee.Date('1950')
+var time_end = ee.Date('2023')
+var time_dif = time_end.difference(time_start, 'year').round()
+
+
+var cor = [-104.91143662929535,42.855066925273036]
+
+var geometry = ee.Geometry.Point(cor)
+
+var era = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
+.select('snow_cover')
+.filterDate(time_start,time_end)
+
+var era_mean = era.filterDate('2020','2021').mean()
+
+Map.addLayer(era_mean, [],'era_mean', false)
+
+var test_snow = era.filterDate('2020','2021')
+.map(function(img){return img.gt(10)}).sum();
+
+Map.addLayer(test_snow,{min: 0, max: 365},'snow_frequ',false)
+
+var list = ee.List.sequence(0, time_dif).map(function(i){
+  return ee.Date.fromYMD(1950, 1, 1).advance(i, 'year')
+  })
+  
+print(list)
+
+var annual_frequency = ee.ImageCollection(list.map(function(date){
+  var start_date = ee.Date(date);
+  var end_date = start_date.advance(1, 'year')
+  var annual_snow = era.filterDate(start_date, end_date)
+  .map(function(img){return img.gt(10)}).sum();
+  return annual_snow
+  .set('system:time_start', start_date.millis())
+  .set('system:time_end', end_date.millis())
+  .set('date', start_date.format('YYYY'))
+  }));
+  
+Map.addLayer(annual_frequency.toBands(), [], 'snow_frequency_coll', false)
+
+
+print(
+  ui.Chart.image.series(annual_frequency, geometry, ee.Reducer.first(),
+  10000, 'system:time_start')
+  )
+
+
+
+
