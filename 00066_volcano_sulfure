@@ -1,0 +1,109 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/ 
+
+
+var cor = [160.4672927121554,56.09330503776814]
+
+var geometry = ee.Geometry.Point(cor)
+
+Map.centerObject(geometry)
+
+var cor2 = [
+  [159.9179763059054,55.590570210034535], 
+  [161.3352126340304,55.590570210034535], 
+  [161.3352126340304,56.288918363338176],
+  [159.9179763059054,56.288918363338176], 
+  [159.9179763059054,55.590570210034535]
+  ]
+
+var geometry2 = ee.Geometry.Polygon(cor2)
+
+
+var time_start = ee.Date('2023')
+var time_end = ee.Date('2024')
+var time_diff = time_end.difference(time_start, 'day')
+
+print(time_diff)
+
+var sen5 = ee.ImageCollection("COPERNICUS/S5P/NRTI/L3_SO2")
+.select('SO2_column_number_density')
+.filterDate(time_start, time_end)
+
+var list = ee.List.sequence(0, time_diff.subtract(1), 1).map(function(day){
+  return time_start.advance(day, 'days')
+  })
+
+var daily = ee.ImageCollection(list.map(function(date){
+  var start_date = ee.Date(date)
+  var end_date = start_date.advance(1, 'days')
+  var img = sen5.filterDate(start_date, end_date).max()
+  return img
+  .set('system:time_start', start_date.millis())
+  .set('system:time_end', end_date.millis())
+  }));
+
+
+print(
+  ui.Chart.image.series(daily, geometry, ee.Reducer.first(), 1000, 'system:time_start')
+  .setChartType('ColumnChart')
+  )
+
+
+Map.addLayer(daily.filterDate('2023-04-11', '2023-04-12').first().clip(geometry2),[],'eruption', false )
+
+
+Export.image.toDrive({
+  image: daily.filterDate('2023-04-11', '2023-04-12').first(),
+  description: 'eruption_test', 
+  scale: 1000, 
+  region: geometry2, 
+  crs: 'EPSG:4326', 
+  folder: 'test'
+  })
+
+
+// anomaly detection 
+
+
+var daily_mean = daily.median()
+
+var anomaly = daily.map(function(img){
+  var anom = img.subtract(daily_mean)
+  var stat = ee.Number(anom.reduceRegion({
+    reducer: ee.Reducer.first(), geometry: geometry, scale: 1000
+    }).values().get(0))
+  var date = img.date().format('YYYY-MM-dd')
+  
+  return anom
+  .copyProperties(img, img.propertyNames())
+  .set('anom_stat', stat)
+  .set('date', ee.String(date))
+  })
+  
+print(anomaly.aggregate_array('anom_stat'))
+
+
+var activity = anomaly.filter(ee.Filter.gt('anom_stat', 0))
+
+print(activity.aggregate_array('date'))
+
+var stack = activity.map(function(img){
+  var date = img.get('date')
+  return img.rename(ee.String(date))  
+  }).toBands()
+
+Map.addLayer(stack.clip(geometry2),[],'stack_activity',false)
+
+
+
+
+
