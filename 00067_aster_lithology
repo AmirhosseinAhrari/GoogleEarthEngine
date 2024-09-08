@@ -1,0 +1,108 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/ 
+
+var cor  = [
+  [51.593180412962234,33.80432620586323],
+  [54.295817131712234,33.80432620586323],
+  [54.295817131712234,35.104250404611456],
+  [51.593180412962234,35.104250404611456],
+  [51.593180412962234,33.80432620586323]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+Map.centerObject(geometry)
+
+var aster = ee.ImageCollection("ASTER/AST_L1T_003")
+.filterBounds(geometry)
+.filter(ee.Filter.lt('CLOUDCOVER',10))
+.filter(ee.Filter.calendarRange(6, 9, 'month'))
+.mean()
+
+print(aster)
+
+Map.addLayer(aster.clip(geometry),[],'aster',false)
+
+function dos(img){
+  
+  
+  var ms = img.select('B0[1-9]', 'B3N');
+  var tir = img.select('B1[0-4]');
+  
+  var dark_object = ms.reduceRegion({
+    reducer: ee.Reducer.min(), geometry: geometry, scale: 500
+    });
+  
+  
+  var bands = ms.bandNames()
+  
+  var cor = bands.map(function(band_name){
+    var do_val = ee.Number(dark_object.get(band_name))
+    var cor = ms.select([band_name]).subtract(do_val)
+    return cor
+    });
+    
+    
+  return ee.ImageCollection(cor).toBands().addBands(tir)
+  
+  }
+  
+var aster_cor = dos(aster);
+
+print(aster_cor.bandNames())
+
+function lithology(img, index){
+  
+  var kli = img.expression('(b4/b5)*(b8/b6)',
+  {'b4': img.select('2_B04'), 'b5': img.select('3_B05'), 'b6': img.select('4_B06'), 'b8': img.select('6_B08')}).rename('kaolinite')
+  
+  var ali = img.expression('(b7/b5)*(b7/b8)',
+  {'b5': img.select('3_B05'), 'b7': img.select('5_B07'), 'b8': img.select('6_B08')}).rename('alunite')
+  
+  var cli = img.expression('(b6/b8)*(b9/b8)',
+  {'b6': img.select('4_B06'), 'b8': img.select('6_B08'), 'b9': img.select('7_B09')}).rename('calcite')
+  
+  var qi = img.expression('(b11 * b11)/(b10 * b12)', 
+  {'b10': img.select('B10'), 'b11': img.select('B11'), 'b12': img.select('B12')}).rename('quartz')
+  
+  var ci = img.expression('b13/b14', 
+  {'b13': img.select('B13'), 'b14': img.select('B14')}).rename('carbonate')
+  
+  var mi = img.expression('b12/b13', 
+  {'b12': img.select('B12'), 'b13': img.select('B13')}).rename('mafic')
+  
+  return ee.Image(ee.Algorithms.If(index === 'kaolinite', kli, 
+  ee.Algorithms.If(index === 'alunite', ali, 
+  ee.Algorithms.If(index === 'calcite', cli, 
+  ee.Algorithms.If(index === 'quartz', qi, 
+  ee.Algorithms.If(index === 'carbonate', ci, 
+  ee.Algorithms.If(index === 'mafic', mi)))))))
+  
+  }
+
+var kaolinite = lithology(aster_cor, 'kaolinite')
+var alunite = lithology(aster_cor, 'alunite')
+var calcite = lithology(aster_cor, 'calcite')
+var quartz = lithology(aster_cor, 'quartz')
+var carbonate = lithology(aster_cor, 'carbonate')
+var mafic = lithology(aster_cor, 'mafic')
+
+
+
+Map.addLayer(kaolinite.clip(geometry), [], 'kaolinite', false)
+Map.addLayer(alunite.clip(geometry), [], 'alunite', false)
+Map.addLayer(calcite.clip(geometry), [], 'calcite', false)
+Map.addLayer(quartz.clip(geometry), [], 'quartz', false)
+Map.addLayer(carbonate.clip(geometry), [], 'carbonate', false)
+Map.addLayer(mafic.clip(geometry), [], 'mafic', false)
+
+Map.addLayer(kaolinite.addBands(calcite).addBands(quartz).clip(geometry),[],'kao+cal+qua',false)
