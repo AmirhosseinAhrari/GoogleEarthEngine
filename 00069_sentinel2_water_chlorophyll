@@ -1,0 +1,62 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [-119.54665080086161,40.038023972187226]
+
+var geometry = ee.Geometry.Point(cor)
+
+var cor2 = [
+  [-119.77142190684849,39.825295708288806],
+  [-119.31274270762974,39.825295708288806],
+  [-119.31274270762974,40.25006751768576],
+  [-119.77142190684849,40.25006751768576],
+  [-119.77142190684849,39.825295708288806]
+  ]
+
+var geometry2 = ee.Geometry.Polygon(cor2)
+
+Map.centerObject(geometry2)
+
+
+var sentinel = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+.filterDate('2021-09-01','2021-10-01')
+.filterBounds(geometry)
+.filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',45))
+.map(function(img){
+  var bands = img.select('B.*').multiply(0.0001)
+  var ndwi = bands.normalizedDifference(['B3','B8']).rename('ndwi')
+  var thr = ndwi.gt(0.1)
+  var ndci = bands.normalizedDifference(['B5','B4']).rename('ndci')
+  return ndci.updateMask(thr)
+  .copyProperties(img,['system:time_start','system:time_end'])
+  })
+
+print(sentinel)
+
+Map.addLayer(sentinel.toBands().clip(geometry2), [], 'ndci', false)
+
+
+var target = sentinel.filterDate('2021-09-08','2021-09-09')
+
+Map.addLayer(target.toBands().select([0]).clip(geometry2), [], 'ndci-target', false)
+
+
+Export.image.toDrive({
+  image: target.mean().clip(geometry2),
+  description: 'ndci', 
+  scale: 20, 
+  region: geometry2, 
+  maxPixels: 1e13, 
+  crs: 'EPSG:4326',
+  folder: 'Chlorophyll'
+  })
+
