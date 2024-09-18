@@ -1,0 +1,77 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var loc1 = [48.061541161631496,36.70101649662329]
+var loc2 = [52.631853661631496,36.453984440880504]
+
+
+var point1 = ee.Feature(ee.Geometry.Point(loc1))
+var point2 = ee.Feature(ee.Geometry.Point(loc2))
+
+var geometry2 = ee.FeatureCollection([point1, point2])
+
+
+
+
+var cor = [
+  [43.667009911631496,24.942959988339428],
+  [63.090838036631496,24.942959988339428],
+  [63.090838036631496,39.78889293849504],
+  [43.667009911631496,39.78889293849504],
+  [43.667009911631496,24.942959988339428]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+ 
+var time_start = ee.Date('2003')
+var time_end = ee.Date('2024')
+var time_dif = time_end.difference(time_start, 'month').round()
+
+var gldas = ee.ImageCollection("NASA/GLDAS/V022/CLSM/G025/DA1D")
+.select('GWS_tavg')
+.filterDate(time_start, time_end)
+
+var list = ee.List.sequence(0, ee.Number(time_dif).subtract(1), 1).map(function(delta){
+  return ee.Date(time_start).advance(delta, 'month')})
+
+var monthly = ee.ImageCollection(list.map(function(date){
+  var start_date = ee.Date(date)
+  var end_date = start_date.advance(1, 'month')
+  var month = gldas.filterDate(start_date, end_date).mean().rename('GW')
+  var bands = month.bandNames().size()
+  return month
+  .set('system:time_start', start_date.millis())
+  .set('system:time_end', end_date.millis())
+  .set('system:index', start_date.format('YYYY-MM-dd'))
+  .set('bands', ee.Number(bands))
+  })).filter(ee.Filter.gt('bands',0))
+  
+
+print(
+  ui.Chart.image.series(monthly, geometry, ee.Reducer.mean(), 27000, 'system:time_start')
+  )
+
+Map.addLayer(monthly.toBands().clip(geometry),[],'GW',false)
+
+
+print(
+  ui.Chart.image.seriesByRegion(monthly, geometry2, ee.Reducer.first(),
+  'GW', 27000, 'system:time_start', 'system:index')
+  )
+
+Export.image.toDrive({
+  image: monthly.toBands().clip(geometry), 
+  description: 'Iran_GW', 
+  scale: 27000, 
+  region: geometry, 
+  crs: 'EPSG:4326', 
+  folder: 'ground_water'
+  })
