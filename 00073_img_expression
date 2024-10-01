@@ -1,0 +1,47 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [24.601591838871006,60.127836641299616], 
+  [25.150908245121006,60.127836641299616],
+  [25.150908245121006,60.331035392660304],
+  [24.601591838871006,60.331035392660304],
+  [24.601591838871006,60.127836641299616]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+var sen2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+.filterBounds(geometry)
+.filterDate('2023-07-01','2024-09-01')
+.filter(ee.Filter.lt('CLOUDY_PIXEL_OVER_LAND_PERCENTAGE', 10))
+.map(function(img){
+  var bands = img.select('B.*').multiply(0.0001)
+  // ndvi = (nir - red)/(nir + red)
+  var ndvi1 = bands.expression('(nir - red)/(nir + red)',{'nir': bands.select('B8'), 'red': bands.select('B4')}).rename('ndvi1')
+  var ndvi2 = (bands.select('B8').subtract(bands.select('B4'))).divide(bands.select('B8').add(bands.select('B4'))).rename('ndvi2')
+  var ndvi3 = bands.normalizedDifference(['B8','B4']).rename('ndvi3')
+  return ee.Image.cat([ndvi1, ndvi2, ndvi3])
+  .copyProperties(img, img.propertyNames())
+  
+  })
+
+
+var sen2_img = ee.Image('COPERNICUS/S2_SR_HARMONIZED/20230914T095031_20230914T095325_T34VFN')
+
+var sen2_bands = sen2_img.select('B.*').expression('img * 0.0001',{'img': sen2_img.select('B.*')})
+
+var sen2_ndvi = sen2_bands.normalizedDifference(['B8','B4']).rename('ndvi')
+
+Map.addLayer(sen2_ndvi, [], 'ndvi', false)
+
+
