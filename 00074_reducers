@@ -1,0 +1,73 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [-114.7744262311347,42.12127672144149],
+  [-113.09077144597845,42.12127672144149],
+  [-113.09077144597845,42.94700331032601],
+  [-114.7744262311347,42.94700331032601],
+  [-114.7744262311347,42.12127672144149]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+Map.centerObject(geometry)
+
+
+var ndvi = ee.ImageCollection("MODIS/061/MOD13Q1")
+.select('NDVI')
+.filterDate('2023', '2024')
+.map(function(img){
+  var bands = img.multiply(0.0001)
+  var projected = bands.reproject('EPSG:4326', null, 250)
+  return projected
+  .copyProperties(img,img.propertyNames())
+  })
+
+
+var stack = ndvi.toBands()
+
+Map.addLayer(stack.clip(geometry),[],'ndvi_stack',false)
+
+
+var ndvi_mean = ndvi.mean()
+
+Map.addLayer(ndvi_mean.clip(geometry),[],'ndvi_mean', false)
+
+var ndvi_max = ndvi.max()
+
+Map.addLayer(ndvi_max.clip(geometry),[],'ndvi_max',false)
+
+var ndvi_min = ndvi.min()
+var ndvi_median = ndvi.median()
+var ndvi_std = ndvi.reduce(ee.Reducer.stdDev())
+
+Map.addLayer(ndvi_std.clip(geometry),[],'ndvi_std',false)
+
+
+
+Export.image.toDrive({
+  image: ndvi_median, 
+  description: 'ndvi_median', 
+  scale: 250, 
+  region: geometry, 
+  crs: 'EPSG:4326', 
+  folder: 'test'
+  
+  })
+
+
+
+
+
+
+
