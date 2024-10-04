@@ -1,0 +1,80 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+
+var cor1 = [-114.11365750553733,42.559084813300494]
+
+var geometry = ee.Geometry.Point(cor1)
+
+
+
+var et = ee.ImageCollection("MODIS/061/MOD16A2GF")
+.filterDate('2023', '2024')
+.map(function(img){
+  var bands = img.select('ET').multiply(0.1)
+  return bands.rename('MODIS_ET')
+  .copyProperties(img, img.propertyNames())
+  })
+
+
+print(
+  ui.Chart.image.series(et, geometry, ee.Reducer.first(), 500, 'system:time_start')
+  .setChartType('AreaChart')
+  .setOptions({
+    title: 'Evapotranspiration Chart', 
+    vAxis: {title: 'ET (mm)'}, hAxis: {title: 'Date'},
+    series: {0:{color: 'red', lineWidth: 4, pointSize: 5}}
+    
+    })
+  )
+  
+
+var cor2 = [
+  [-114.26883939030296,42.52569509607107],
+  [-114.26094296696311,42.52569509607107],
+  [-114.26094296696311,42.53100829096698],
+  [-114.26883939030296,42.53100829096698],
+  [-114.26883939030296,42.52569509607107]
+  ]
+
+var pol1 = ee.Geometry.Polygon(cor2)
+
+var cor3 = [
+  [-114.22420743229515,42.58360981365639],
+  [-114.2159676862014,42.58360981365639],
+  [-114.2159676862014,42.58942360551128],
+  [-114.22420743229515,42.58942360551128],
+  [-114.22420743229515,42.58360981365639]
+  ]
+  
+var pol2 = ee.Geometry.Polygon(cor3)
+
+var geometry2 = ee.FeatureCollection([ee.Feature(pol1), ee.Feature(pol2)])
+
+
+
+
+print(
+  ui.Chart.image.seriesByRegion(et, geometry2, ee.Reducer.mean(),
+  'MODIS_ET', 500, 'system:time_start', 'system:index')
+  .setChartType('AreaChart')
+  .setOptions({
+    title: 'Evapotranspiration Comparison', 
+    vAxis: {title: 'ET (mm)'}, hAxis: {title: 'Date'}, 
+    series: {0:{color: 'orange', lineWidth: 4, pointSize: 5}, 
+    1:{color: 'green', lineWidth: 4, pointSize: 5}}
+    
+    
+    })
+  )
+
+
