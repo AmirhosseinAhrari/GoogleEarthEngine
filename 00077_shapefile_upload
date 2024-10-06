@@ -1,0 +1,46 @@
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+Map.centerObject(table)
+Map.addLayer(table,{color: 'red'})
+
+print(table.geometry())
+
+var roi = table.map(function(feature){
+  return feature.simplify(1000)
+  })
+  
+Map.addLayer(roi)
+
+print(roi.geometry())
+
+var lst = ee.ImageCollection("MODIS/061/MOD11A2")
+.select('LST_Day_1km')
+.filterDate('2023','2024').mean().multiply(0.02).subtract(273.15)
+
+
+Map.addLayer(lst.clip(roi),{palette: ['blue','white','red']},'lst',false)
+
+
+Export.image.toDrive({
+  image: lst.clip(roi), 
+  description: 'lst_data', 
+  scale: 1000, 
+  region: roi, 
+  crs: 'EPSG:4326', 
+  folder: 'test'
+  
+  })
+
+
+
+
+
