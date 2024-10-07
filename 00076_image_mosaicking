@@ -1,0 +1,49 @@
+ 
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor = [49.460707394140904,37.284294138744144]
+
+var geometry = ee.Geometry.Point(cor)
+
+var roi = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level1")
+.filterBounds(geometry)
+
+Map.addLayer(roi)
+Map.centerObject(roi)
+
+var time_start = ee.Date('2023')
+var time_end = ee.Date('2024')
+var time_dif = time_end.difference(time_start, 'day')
+
+var list = ee.List.sequence(0, ee.Number(time_dif).subtract(1), 5).map(function(number){
+  return time_start.advance(number, 'days')
+  })
+
+var sen2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+.select('B[2-4]','B8')
+.filterDate('2023', '2024')
+.filterBounds(roi)
+
+
+var sen2_mosaic = ee.ImageCollection(list.map(function(date){
+  var start_date = ee.Date(date)
+  var end_date = start_date.advance(5, 'days')
+  var img = sen2.filterDate(start_date, end_date).mosaic()
+  return img
+  .set('system:time_start', start_date.millis())
+  .set('system:time_end', end_date.millis())
+  }))
+  
+
+
+Map.addLayer(sen2_mosaic.select(['B8']).filter(ee.Filter.calendarRange(8, 8, 'month')).toBands().clip(roi),[], 'mosaic', false)
+Map.addLayer(sen2.select('B8').filter(ee.Filter.calendarRange(8, 8, 'month')).toBands().clip(roi),[],'original',false)
