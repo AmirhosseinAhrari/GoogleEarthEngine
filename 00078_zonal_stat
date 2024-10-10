@@ -1,0 +1,76 @@
+ 
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [46.118633714162954,37.28721066932214]
+
+var geometry = ee.Geometry.Point(cor)
+
+
+var roi = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_5")
+.filterBounds(geometry).map(function(feature){
+  return feature.simplify(1000)
+  })
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var landcover = ee.ImageCollection("MODIS/061/MCD12Q1")
+.mode().select('LC_Type1')
+
+var vis = {
+  min: 1.0,
+  max: 17.0,
+  palette: [
+    '05450a', '086a10', '54a708', '78d203', '009900', 'c6b044', 'dcd159',
+    'dade48', 'fbff13', 'b6ff05', '27ff87', 'c24f44', 'a5a5a5', 'ff6d4c',
+    '69fff8', 'f9ffa4', '1c0dff'
+  ],
+};
+
+Map.addLayer(landcover.clip(roi), vis, 'landcover', false)
+
+
+
+var ndvi = ee.ImageCollection("MODIS/061/MOD13Q1")
+.select('NDVI')
+.filterDate('2020','2021').median().multiply(0.0001)
+
+
+Map.addLayer(ndvi.clip(roi), [], 'ndvi', false)
+
+
+
+var dataset1 = ee.Image.cat([ndvi, landcover])
+
+var zonal_stat1 = dataset1.reduceRegion({
+  reducer: ee.Reducer.minMax().combine(ee.Reducer.mean(), null, true).group(1, 'Landcover')
+  , geometry: roi, scale: 250
+  })
+  
+print(zonal_stat1)
+
+
+var lst = ee.ImageCollection("MODIS/061/MOD11A2")
+.select('LST_Day_1km')
+.filterDate('2020','2021').median().multiply(0.02).subtract(273.15)
+
+Map.addLayer(lst.clip(roi), [], 'lst', false)
+
+var dataset2 = ee.Image.cat([lst, landcover])
+
+var zonal_stat2 = dataset2.reduceRegion({
+  reducer: ee.Reducer.minMax().combine(ee.Reducer.mean(), null, true).group(1, 'Landcover')
+  , geometry: roi, scale: 250
+  })
+  
+print(zonal_stat2)
+
+
