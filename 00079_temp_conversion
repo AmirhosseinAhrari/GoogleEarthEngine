@@ -1,0 +1,53 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [-98.627734375,43.59139671684014]
+
+var geometry = ee.Geometry.Point(cor)
+
+var time_start = ee.Date('2010')
+var time_end = ee.Date('2024')
+var time_dif = time_end.difference(time_start, 'year').round()
+var delta = ee.Number(1)
+
+print(time_dif)
+
+
+var modis = ee.ImageCollection("MODIS/061/MOD11A1")
+.select('LST_Day_1km')
+.filterDate(time_start, time_end)
+
+
+var list = ee.List.sequence(0, ee.Number(time_dif).subtract(1), delta).map(function(interval){
+  return time_start.advance(interval, 'year')
+  })
+
+var modis8days = ee.ImageCollection(list.map(function(date){
+  var start_date = ee.Date(date)
+  var end_date = start_date.advance(delta, 'year')
+  var img = modis.filterDate(start_date, end_date).reduce(ee.Reducer.median())
+  return img
+  .set('system:time_start', start_date.millis() )
+  .set('system:index', start_date.format('YYYY-MM-dd'))
+  }))
+  
+print(modis8days )
+
+
+
+print(
+  ui.Chart.image.series(modis, geometry, ee.Reducer.first(), 1000, 'system:time_start')
+  )
+
+print(
+  ui.Chart.image.series(modis8days, geometry, ee.Reducer.first(), 1000, 'system:time_start')
+  )
