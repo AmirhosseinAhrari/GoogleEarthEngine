@@ -1,0 +1,89 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor = [25.1702973279345,63.78531409715647]
+
+var geometry = ee.Geometry.Point(cor)
+
+var time_start = ee.Date('2018')
+var time_end = ee.Date('2019')
+
+var era = ee.ImageCollection("ECMWF/ERA5/DAILY")
+.select('minimum_2m_air_temperature')
+.filterDate(time_start, time_end)
+
+
+var frost = era.map(function(img){
+  return img.subtract(273.15).lt(0)
+  }).sum()
+
+var roi = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level0")
+.filterBounds(geometry)
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+Map.addLayer(frost.clip(roi), [], 'frost_2018', false);
+
+
+Export.image.toDrive({
+  image: frost.clip(roi).float(), 
+  description:'finland_frost', 
+  scale: 27000,
+  region: roi, 
+  crs: 'EPSG:4326', 
+  folder: 'test'
+  })
+
+
+var time_start = ee.Date('1980')
+var time_end = ee.Date('2020')
+var time_dif = time_end.difference(time_start, 'year').round()
+
+var list = ee.List.sequence(0, time_dif.subtract(1), 1).map(function(interval){
+  return time_start.advance(interval, 'year')
+  })
+
+var frost_collection = ee.ImageCollection(list.map(function(date){
+  var start_date = ee.Date(date)
+  var end_date = start_date.advance(1, 'year')
+  var filtered = ee.ImageCollection("ECMWF/ERA5/DAILY")
+  .select('minimum_2m_air_temperature')
+  .filterDate(start_date, end_date).map(function(img){
+    return img.subtract(273.15).lt(0)
+    }).sum().rename('frost_days')
+  return filtered
+  .set('system:time_start', start_date.millis())
+  .set('system:index', start_date.format('YYYY-MM-dd'))
+  
+  }))
+
+print(
+  ui.Chart.image.series(frost_collection, roi, ee.Reducer.mean(),
+  27000, 'system:time_start')
+  )
+
+
+Map.addLayer(frost_collection.toBands().clip(roi), [], 'frost_days_collection', false)
+
+
+Export.image.toDrive({
+  image: frost_collection.toBands().clip(roi).float(), 
+  description:'finland_frost_years', 
+  scale: 27000,
+  region: roi, 
+  crs: 'EPSG:4326', 
+  folder: 'test'
+  })
+
+
