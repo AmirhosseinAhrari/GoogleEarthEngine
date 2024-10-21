@@ -1,0 +1,86 @@
+ 
+ 
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [49.46607928539905,37.23498585398302]
+
+var geometry = ee.Geometry.Point(cor)
+ 
+ 
+var roi = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level1")
+.filterBounds(geometry)
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var mod = ee.ImageCollection("MODIS/006/MOD44B")
+.select('Percent_Tree_Cover')
+.filterDate('2020','2021').first()
+
+Map.addLayer(mod.clip(roi),[],'mod_tree_cover',false)
+
+var lc8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+.select('SR_B.*')
+.filterDate('2020', '2021')
+.filterBounds(roi)
+.filter(ee.Filter.lt('CLOUD_COVER_LAND',10))
+.median()
+
+var lc8_sr = lc8.multiply(0.0000275).add(-0.2)
+
+var lc8_ndvi = lc8_sr.normalizedDifference(['SR_B5','SR_B4']).rename('ndvi')
+
+Map.addLayer(lc8_ndvi.clip(roi),[],'ndvi',false)
+
+var training_data = lc8_ndvi.addBands(mod)
+
+var linear_fit = training_data.reduceRegion({
+  reducer: ee.Reducer.linearFit(), geometry: roi, scale: 100
+  })
+
+print(linear_fit)
+
+var scale = ee.Number(linear_fit.values().get(1))
+var offset = ee.Number(linear_fit.values().get(0))
+
+print('scale', scale)
+print('offset', offset)
+
+var lc8_tree = lc8_ndvi.multiply(scale).add(offset).round().rename('lc8_tree_cover')
+
+var thr = lc8_tree.lt(0).not()
+
+Map.addLayer(thr.clip(roi),[],'thr',false)
+
+var lc8_tree_cover = lc8_tree.updateMask(thr)
+
+Map.addLayer(lc8_tree_cover.clip(roi),[],'lc8_tree_cover',false)
+
+
+var dif = mod.subtract(lc8_tree_cover)
+var dif_pow = dif.pow(2)
+var dif_mean = ee.Number(dif_pow.reduceRegion({
+  reducer: ee.Reducer.mean(), scale: 100, geometry: roi
+  }).values().get(0)).sqrt()
+  
+print(dif_mean)
+
+Export.image.toDrive({
+  image: lc8_tree_cover.clip(roi), 
+  description: 'lc8_tree', 
+  scale: 30, 
+  region: roi, 
+  maxPixels: 1e13, 
+  folder: 'test', 
+  crs: 'EPSG:4326'
+  })
+
+
