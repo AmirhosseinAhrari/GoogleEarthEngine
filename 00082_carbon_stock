@@ -1,0 +1,95 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor = [49.163473931113565,37.295688008078656]
+
+var geometry = ee.Geometry.Point(cor)
+
+var roi = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level1")
+.filterBounds(geometry)
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var carbon = ee.ImageCollection("WCMC/biomass_carbon_density/v1_0")
+.first()
+
+Map.addLayer(carbon.clip(roi),[],'carbon',false)
+
+var sen2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+.select('B.*')
+.filterBounds(roi)
+.filterDate('2020','2021')
+.filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
+.median().multiply(0.0001)
+
+var ndvi = sen2.normalizedDifference(['B8','B4']).rename('NDVI')
+
+Map.addLayer(ndvi.clip(roi),[],'ndvi',false)
+
+var dw = ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
+.select('label')
+.filterDate('2020','2021')
+.filterBounds(roi)
+.mode().eq(1)
+
+Map.addLayer(dw.clip(roi),[],'tree',false)
+
+var predictors = ee.Image.constant(1).addBands(sen2).addBands(ndvi).updateMask(dw)
+
+Map.addLayer(predictors.clip(roi),[],'predictors',false)
+
+var dataset = predictors.addBands(carbon)
+
+var model = dataset.reduceRegion({
+  reducer: ee.Reducer.robustLinearRegression(14, 1), geometry: roi, scale: 250, bestEffort:true
+  })
+  
+var coef = ee.Array(model.get('coefficients')).project([0]).toList()
+
+var sen2_carbon = predictors.multiply(ee.Image.constant(coef)).reduce(ee.Reducer.sum()).rename('sen2_carbon')
+
+Map.addLayer(sen2_carbon.clip(roi),[],'sen2_carbon',false)
+
+
+var dif = carbon.subtract(sen2_carbon)
+var pow = dif.pow(2)
+var rmse = ee.Number(pow.reduceRegion({
+  reducer: ee.Reducer.mean(), geometry: roi, scale: 250
+  }).values().get(0)).sqrt()
+  
+print('rmse:', rmse)
+
+
+Export.image.toDrive({
+  image: sen2_carbon.float().clip(roi), 
+  description: 'sen2_carbon', 
+  scale: 100, 
+  region: roi, 
+  folder: 'test', 
+  crs: 'EPSG:4326', 
+  maxPixels: 1e13
+  })
+
+
+
+
+
+
+
+
+
+
+
+
+
