@@ -1,0 +1,80 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-88: Precipitation Intensity Index
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [-18.943910440675328,-37.08330302145323], 
+  [47.85296455932467,-37.08330302145323], 
+  [47.85296455932467,42.3649692346185], 
+  [-18.943910440675328,42.3649692346185], 
+  [-18.943910440675328,-37.08330302145323]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+
+ 
+ 
+var pr = ee.ImageCollection("NOAA/PERSIANN-CDR")
+.filterDate('2023','2024')
+
+var w = pr.map(function(img){
+  return img.gte(1)
+  }).sum()
+  
+Map.addLayer(w,[],'wet_days',false)
+
+var rr = pr.map(function(img){
+  var thr = img.gte(1)
+  return img.updateMask(thr)
+  }).sum();
+  
+Map.addLayer(rr,[],'sum_pr',false)
+
+var intensity = rr.divide(w).rename('pr_intensity')
+
+Map.addLayer(intensity,{palette:['red','white','blue']}, 'pr_intensity',false, 0.5)
+
+Export.image.toDrive({
+  image: intensity, 
+  description: 'pr_intensity', 
+  scale: 27000, 
+  crs: 'EPSG:4326', 
+  region: geometry, 
+  folder: 'test'
+  })
+
+function pr_intensity(collection, date, thr){
+  var year = ee.Date(date)
+  var filter = collection.filterDate(year, year.advance(1, 'year'))
+  var num_wet = filter.map(function(img){
+  return img.gte(1)
+  }).sum();
+  var pr_total = filter.map(function(img){
+  return img.updateMask(img.gte(1))
+  }).sum();
+  var index = pr_total.divide(num_wet).rename('pr_intensity'+date)
+  Map.addLayer(index,{palette:['red','white','blue']}, 'pr_intensity_'+date,false, 0.5)
+  Export.image.toDrive({
+  image: index, 
+  description: 'pr_intensity'+date, 
+  scale: 27000, 
+  crs: 'EPSG:4326', 
+  region: geometry, 
+  folder: 'test'
+  })
+  return index
+  }
+  
+var sdii2010 = pr_intensity(ee.ImageCollection("NOAA/PERSIANN-CDR"), '2010', 1)
+var sdii2015 = pr_intensity(ee.ImageCollection("NOAA/PERSIANN-CDR"), '2015', 1)
+
