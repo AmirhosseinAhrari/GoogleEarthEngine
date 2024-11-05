@@ -1,0 +1,95 @@
+
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-89: Valencia Flood from GEE View
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor2 = [
+  [-0.5925608219299572,39.05499447698859], 
+  [-0.08444314614870718,39.05499447698859], 
+  [-0.08444314614870718,39.48875100708455], 
+  [-0.5925608219299572,39.48875100708455], 
+  [-0.5925608219299572,39.05499447698859]
+  ]
+
+var geometry2 = ee.Geometry.Polygon(cor2)
+
+var cor = [-0.40545662271497473,39.339841956721486]
+var geometry = ee.Geometry.Point(cor)
+
+var sen2_before = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+.filterDate('2024-10-01', '2024-10-07')
+.filterBounds(geometry)
+.mosaic()
+
+Map.addLayer(sen2_before,{bands:['B8','B4','B3']},'sen2_before',false)
+
+
+var sen2_after = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+.filterDate('2024-10-29','2024-11-01')
+.filterBounds(geometry)
+.mosaic()
+
+Map.addLayer(sen2_after,{bands:['B8','B4','B3']}, 'sen2_after', false)
+
+
+var sen1_before = ee.ImageCollection("COPERNICUS/S1_GRD")
+.filterDate('2024-10-01', '2024-10-25')
+.filterBounds(geometry)
+.filter(ee.Filter.listContains('transmitterReceiverPolarisation','VV'))
+.filter(ee.Filter.eq('instrumentMode','IW')).select('VV')
+.filter(ee.Filter.eq('orbitProperties_pass','DESCENDING')).mean()
+
+Map.addLayer(sen1_before.clip(geometry2),[],'sen1_before', false)
+
+
+
+var sen1_after = ee.ImageCollection("COPERNICUS/S1_GRD")
+.filterDate('2024-10-29', '2024-11-01')
+.filterBounds(geometry)
+.filter(ee.Filter.listContains('transmitterReceiverPolarisation','VV'))
+.filter(ee.Filter.eq('instrumentMode','IW')).select('VV')
+.mosaic()
+
+
+Map.addLayer(sen1_after.clip(geometry2),[],'sen1_after', false)
+
+
+
+var flood = sen1_before.subtract(sen1_after)
+
+var despeckel = flood.focalMean(30, 'square', 'meters')
+
+Map.addLayer(despeckel.clip(geometry2),[],'flood',false)
+
+Export.image.toDrive({
+  image: flood.clip(geometry2), 
+  description: 'flooded_img', 
+  scale: 30,
+  region: geometry2, 
+  crs: 'EPSG:4326', 
+  folder: 'test', 
+  maxPixels: 1e13
+  })
+
+
+
+
+
+
+
+
+
+
+
+
+
