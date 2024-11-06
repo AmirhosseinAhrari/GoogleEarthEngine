@@ -1,0 +1,80 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-90: Heavy Precipitation Before Valencia Flood
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [-0.5798481276712097,39.351468153296324]
+
+var geometry = ee.Geometry.Point(cor)
+
+
+var roi = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level0")
+.filterBounds(geometry)
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var time_start = ee.Date('2024')
+var time_end = ee.Date('2025')
+
+var pr = ee.ImageCollection("NASA/GPM_L3/IMERG_V07")
+.select('precipitation')
+.filterDate(time_start, time_end)
+
+var time_dif = time_end.difference(time_start, 'days')
+
+var list = ee.List.sequence(0, time_dif.subtract(1), 1).map(function(number){
+  return time_start.advance(number, 'days')
+  })
+  
+var pr_daily = ee.ImageCollection(list.map(function(date){
+  var start_date = ee.Date(date)
+  var end_date = start_date.advance(1, 'days')
+  var daily = pr.filterDate(start_date, end_date).sum()
+  return daily
+  .set('system:time_start', start_date.millis())
+  .set('system:time_end', end_date.millis())
+  .set('system:index', start_date.format('YYYY-MM-dd'))
+  }))
+  
+Map.addLayer(pr_daily.filter(ee.Filter.calendarRange(10, 10, 'month')).toBands().clip(roi), [], 'pr_daily', false)
+
+
+print(
+  ui.Chart.image.series(pr_daily, geometry, ee.Reducer.first(), 10000, 'system:time_start')
+  
+  )
+
+Export.image.toDrive({
+  image: pr_daily.filter(ee.Filter.calendarRange(10, 10, 'month')).toBands().clip(roi).float(), 
+  description: 'heavy_pr', 
+  scale: 10000, 
+  region: roi, 
+  crs: 'EPSG:4326', 
+  folder: 'test'
+  }) 
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
