@@ -1,0 +1,62 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-91: Temeprature Seasonal Analysis, using Harmonic Modelling
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor = [
+  [42.592923031675824,20.1105768020536], 
+  [64.91714178167582,20.1105768020536], 
+  [64.91714178167582,41.35451307842085], 
+  [42.592923031675824,41.35451307842085],
+  [42.592923031675824,20.1105768020536]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+
+
+Map.centerObject(geometry)
+
+var temp = ee.ImageCollection("ECMWF/ERA5_LAND/MONTHLY_AGGR")
+.select('temperature_2m')
+.filterDate('1980','2021')
+
+print(temp.size())
+print(temp.limit(20))
+
+
+var para = temp.map(function(img){
+  var date = ee.Date(img.get('system:time_start'))
+  var phase = date.getFraction('year').multiply(2 * Math.PI)
+  var sin = phase.sin()
+  var cos = phase.cos()
+  var time = date.difference(ee.Date('1970'), 'year')
+  var indep = ee.Image.cat([sin, cos, time, 1]).double()
+  return indep.addBands(img)
+  .copyProperties(img, ['system:time_start','system:time_end'])
+  });
+  
+var model = para.reduce(ee.Reducer.linearRegression(4, 1))
+
+var coef = model.select('coefficients').arrayProject([0]).arrayFlatten([['sin','cos','slope', 'offset']])
+
+Map.addLayer(coef.clip(geometry),[],'coef',false)
+
+Export.image.toDrive({
+  image: coef.clip(geometry), 
+  description: 'harmonic', 
+  scale: 11000, 
+  region: geometry, 
+  crs: 'EPSG:4326', 
+  folder: 'test'
+  })
+
