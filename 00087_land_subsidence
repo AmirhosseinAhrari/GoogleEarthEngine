@@ -1,0 +1,59 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-92: Land Subsidence Product
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+
+var cor = [45.987522953102534,37.16840692552587]
+
+var geometry = ee.Geometry.Point(cor)
+
+
+var prob = ee.Image("projects/sat-io/open-datasets/global_subsidence/Final_subsidence_proba_greater_1cm_2013_2019_recoded");
+
+Map.addLayer(prob,{palette:['white', 'yellow','orange','red','brown','black']}, 'prob',false)
+
+var roi = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_5")
+.filterBounds(geometry).map(function(feature){
+  return feature.simplify(1000)
+  }) 
+  
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var prob_roi = prob.clip(roi)
+
+Map.addLayer(prob_roi,{palette:['white', 'yellow','orange','red','brown','black']}, 'roi_prob',false)
+
+
+var land_sub = ee.Image("projects/sat-io/open-datasets/global_subsidence/Final_subsidence_prediction_recoded");
+
+Map.addLayer(land_sub.updateMask(land_sub.neq(1)),{palette:['white', 'yellow','orange','red','brown','black']}, 'class',false)
+
+
+var land_sub_roi = land_sub.clip(roi)
+
+Map.addLayer(land_sub_roi,{palette:['white', 'yellow','orange','red','brown','black']}, 'roi_class',false)
+
+
+
+
+Export.image.toDrive({
+  image: land_sub_roi, 
+  description: 'land_sub_ex', 
+  scale: 100, 
+  region: roi, 
+  maxPixels: 1e13, 
+  crs: 'EPSG:4326', 
+  folder: 'test'
+  
+  })
+
