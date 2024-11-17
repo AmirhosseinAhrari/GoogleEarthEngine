@@ -1,0 +1,69 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-93: Lake Spatial Monitoring
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+
+var cor = [
+  [53.27413375651567,29.04282136448216], 
+  [54.38100631510942,29.04282136448216], 
+  [54.38100631510942,29.941704158637535],
+  [53.27413375651567,29.941704158637535], 
+  [53.27413375651567,29.04282136448216]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+
+var jrc = ee.Image("JRC/GSW1_4/GlobalSurfaceWater")
+
+print(jrc)
+
+
+var occ = jrc.select('occurrence')
+
+Map.addLayer(occ, [], 'occurrence', false)
+
+var abs_change = jrc.select('change_abs')
+
+Map.addLayer(abs_change,[],'abs_change',false)
+
+var norm_change = jrc.select('change_norm')
+
+Map.addLayer(norm_change,[],'change_norm', false)
+
+var seasonal = jrc.select('seasonality')
+
+Map.addLayer(seasonal,[], 'seasonal', false)
+
+var rec = jrc.select('recurrence')
+
+Map.addLayer(rec,[],'recurrence',false)
+
+
+var transition = jrc.select('transition')
+
+Map.addLayer(transition,{min: 0, max: 10, palette:[
+  '#ffffff', '#0000ff', '#22b14c', '#d1102d', '#99d9ea', '#b5e61d', '#e6a1aa', '#ff7f27', '#ffc90e', 
+  '#7f7f7f', '#c3c3c3'
+  ]},'transition',false)
+
+
+Export.image.toDrive({
+  image: transition.clip(geometry), 
+  description: 'transition', 
+  scale: 30, 
+  region: geometry, 
+  crs: 'EPSG:4326', 
+  folder: 'test'
+  })
+
+
