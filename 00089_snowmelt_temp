@@ -1,0 +1,80 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-94: Snow Melt Monitoring using Temperature Data
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+
+var cor = [26.665149368751752,65.00395626348661]
+
+var geometry = ee.Geometry.Point(cor)
+
+var roi = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_5")
+.filterBounds(geometry).map(function(feature){
+  return feature.simplify(1000)
+  })
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+
+var temp = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
+.select('temperature_2m')
+.filterDate('2015', '2018')
+.filter(ee.Filter.calendarRange(3,6,'month'))
+.map(function(img){
+  var date = img.date()
+  var acqu = date.format('YYYY-MM-dd')
+  var doy = date.getRelative('day', 'year').add(1)
+  return img.subtract(273.15)
+  .copyProperties(img, img.propertyNames())
+  .set('date', acqu)
+  .set('doy', doy)
+  })
+  
+print(temp.filter(ee.Filter.calendarRange(2016, 2016, 'year'))
+.filter(ee.Filter.eq('doy',118)))  
+
+print(
+  ui.Chart.image.doySeriesByYear(temp, 'temperature_2m', roi,
+  ee.Reducer.mean(), 10000, ee.Reducer.mean(), 1, 365)
+  )
+
+
+var snowmelt = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
+.select('snowmelt_sum')
+.filterDate('2015','2018')
+.filter(ee.Filter.calendarRange(3, 6, 'month'))
+.map(function(img){
+  var date = img.date()
+  var acqu = date.format('YYYY-MM-dd')
+  var doy = date.getRelative('day', 'year').add(1)
+  return img
+  .copyProperties(img, img.propertyNames())
+  .set('date', acqu)
+  .set('doy', doy)
+  })
+
+
+print(
+  ui.Chart.image.doySeriesByYear(snowmelt, 'snowmelt_sum', roi, ee.Reducer.mean(),
+  10000, ee.Reducer.mean(), 1, 365)
+  )
+
+
+print(snowmelt)
+
+
+
+
+
+
+
