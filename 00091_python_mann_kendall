@@ -1,0 +1,87 @@
+
+
+
+# -*- coding: utf-8 -*-
+"""GEE_0006_mannkendall_trend_analysis.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-96: Mann-Kendall Trend in GEE
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+
+"""
+
+import ee
+import geemap as gee
+
+ee.Authenticate()
+ee.Initialize(project = 'ee-amirhosseinahrari')
+
+cor = [24.163332459274812,62.95500172226916]
+roi = ee.Geometry.Point(cor)
+
+roi
+
+era = ee.ImageCollection("ECMWF/ERA5_LAND/MONTHLY_AGGR").select('temperature_2m').filterDate('1970','2024')
+
+era
+
+temp = era.map(lambda img: img.subtract(273.15).copyProperties(img,['system:time_start']))
+
+temp
+
+def ext_val(img):
+  temp_val = img.reduceRegion(reducer = ee.Reducer.first(), geometry = roi, scale = 10000).values().get(0)
+  date_val = img.date().format('YYYY-MM-dd')
+  return ee.Feature(None, {'date': date_val, 'temp': temp_val})
+
+temp_date_val = temp.map(ext_val)
+
+temp_date_val
+
+data_list = temp_date_val.toList(temp_date_val.size()).getInfo()
+data_list
+
+temp_list = [item['properties']['temp'] for item in data_list]
+date_list = [item['properties']['date'] for item in data_list]
+
+date_list
+
+import pandas as pd
+
+df = pd.DataFrame({'date': date_list, 'temp': temp_list}).round(2)
+
+df
+
+df.to_csv('temp_dataset.csv')
+
+df['date'] = pd.to_datetime(df['date'])
+
+df_annual = df.resample('YE', on = 'date').mean().round(2)
+
+df_annual
+
+# @title temp
+
+from matplotlib import pyplot as plt
+df_annual['temp'].plot(kind='line', figsize=(8, 4), title='temp')
+plt.gca().spines[['top', 'right']].set_visible(False)
+
+!pip install pymannkendall
+
+import pymannkendall as mk
+
+mk_test = mk.original_test(df_annual)
+
+mk_test
+
+!pip install pyhomogeneity
+
+import pyhomogeneity as ph
+
+pet_test = ph.pettitt_test(df_annual)
+pet_test
