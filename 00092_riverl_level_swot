@@ -1,0 +1,48 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-97: River Water Level Extraction, using SWOT
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [45.722100047300216,36.042910275520335], 
+  [46.688896922300216,36.042910275520335], 
+  [46.688896922300216,37.23298149260607], 
+  [45.722100047300216,37.23298149260607], 
+  [45.722100047300216,36.042910275520335]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+Map.centerObject(geometry)
+
+var nodes_merged = ee.FeatureCollection("projects/sat-io/open-datasets/SWORD/nodes_merged");
+var reaches_merged = ee.FeatureCollection("projects/sat-io/open-datasets/SWORD/reaches_merged");
+
+var nodes = nodes_merged.filterBounds(geometry)
+var reach = reaches_merged.filterBounds(geometry)
+
+Map.addLayer(nodes,{color: 'blue'})
+Map.addLayer(reach, {color: 'red'})
+
+
+Export.table.toDrive({
+  collection: nodes, description: 'nodes_zarrine', folder: 'test', fileFormat: 'SHP'
+  })
+
+Export.table.toDrive({
+  collection: reach, description: 'raech_zarrine', folder: 'test', fileFormat: 'SHP'
+  })
+
+
+
+
+
+
