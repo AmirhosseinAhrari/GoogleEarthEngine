@@ -1,0 +1,66 @@
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-99: Radar Speckel Filtering, using Time Series Analysis
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [48.56781318506075,30.975811844597906],
+  [48.65948036035372,30.975811844597906], 
+  [48.65948036035372,31.051138156917705], 
+  [48.56781318506075,31.051138156917705], 
+  [48.56781318506075,30.975811844597906]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+
+Map.setOptions('SATELLITE')
+Map.centerObject(geometry)
+
+
+var sen1 = ee.ImageCollection("COPERNICUS/S1_GRD")
+.filterDate('2023', '2024')
+.filterBounds(geometry)
+.filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+.filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH'))
+.filter(ee.Filter.eq('instrumentMode', 'IW'))
+.filter(ee.Filter.eq('orbitProperties_pass', 'ASCENDING'))
+
+
+var rvi = sen1.map(function(img){
+  var bands = img.select('VV', 'VH')
+  var sigma = ee.Image(10).pow(img.divide(10))
+  var index = sigma.expression('(4 * vh) / (vh + vv)', {
+    'vh': sigma.select('VH'), 'vv': sigma.select('VV')
+    }).rename('RVI')
+  return index
+  .copyProperties(img, ['system:time_start', 'system:time_end'])
+  })
+  
+
+var day = 15
+var mills = ee.Number(day).multiply(1000 * 24 * 3600)
+var filter = ee.Filter.maxDifference({
+  difference: mills, leftField: 'system:time_start' , rightField: 'system:time_start'
+  })
+var join = ee.Join.saveAll('image')
+var join_collection = ee.ImageCollection(join.apply(rvi, rvi, filter))
+.map(function(img){
+  var images = ee.ImageCollection.fromImages(img.get('image')).mean().rename('corrected')
+  return img.addBands(images)
+  .copyProperties(img, ['system:time_start', 'system:time_end'])
+  })
+  
+print(join_collection)
+
+Map.addLayer(join_collection.select('RVI').toBands().clip(geometry),[],'RVI', false)
+Map.addLayer(join_collection.select('corrected').toBands().clip(geometry),[],'corrected',false)
+
