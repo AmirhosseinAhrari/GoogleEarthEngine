@@ -1,0 +1,48 @@
+
+
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-100: Heatwave Mapping
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+var cor  = [
+  [45.178862816860004,23.21836640777923], 
+  [66.44839406686,23.21836640777923], 
+  [66.44839406686,41.22596686419348], 
+  [45.178862816860004,41.22596686419348], 
+  [45.178862816860004,23.21836640777923]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+var temp = ee.ImageCollection("ECMWF/ERA5_LAND/MONTHLY_AGGR")
+.select('temperature_2m')
+.filterDate('2000','2025')
+
+var baseline = temp.reduce(ee.Reducer.percentile([90]))
+
+Map.addLayer(baseline,[],'baseline',false)
+
+var heatwave = temp.filterDate('2005','2010')
+.map(function(img){
+  return img.gt(baseline)               
+  }).sum()
+  
+Map.addLayer(heatwave,[],'heatwave_index',false)
+
+Export.image.toDrive({
+  image: heatwave, 
+  description: 'heatwave_global',
+  scale: 10000, 
+  region: geometry, 
+  folder: 'test',
+  crs: 'EPSG:4326'
+  })
