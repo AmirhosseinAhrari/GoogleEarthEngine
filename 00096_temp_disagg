@@ -1,0 +1,95 @@
+ 
+ /*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-101: Temporal Disaggregation
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+ 
+ 
+var cor = [
+  [45.744788721480845,36.683639294666456], 
+  [46.305091455855845,36.683639294666456], 
+  [46.305091455855845,37.18419233722654], 
+  [45.744788721480845,37.18419233722654], 
+  [45.744788721480845,36.683639294666456]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+ 
+ 
+var modis = ee.ImageCollection("MODIS/061/MOD13A2")
+.select('NDVI')
+
+var time_start = ee.Date('2023')
+var time_end = ee.Date('2024')
+var time_dif = time_end.difference(time_start, 'days')
+
+print('number of days', time_dif)
+
+var list = ee.List.sequence(0, ee.Number(time_dif).subtract(1), 1).map(function(interval){
+  return time_start.advance(interval, 'days')
+  })
+
+print(list)
+
+var daily = ee.ImageCollection(list.map(function(date_list){
+  var date = ee.Date(date_list)
+  
+  var before = modis.filterDate(date.advance(-16, 'days'), date)
+  .sort('system:time_start', false).first()
+  
+  var after = modis.filterDate(date, date.advance(16, 'days'))
+  .sort('system:time_start', true).first()
+  
+  var before_time = ee.Date(before.get('system:time_start'))
+  var after_time = ee.Date(after.get('system:time_start'))
+  
+  var coef = date.difference(before_time, 'days').divide(after_time.difference(before_time, 'days'))
+  
+  var ndvi_daily = before.addBands(after).expression('before + (after - before) * coef', {
+    'before': before, 'after': after, 'coef': coef
+    }).rename('ndvi_daily')
+    
+  return ndvi_daily.multiply(0.0001).resample().reproject('EPSG:4326',null, 1000)
+  .set('system:time_start', date.millis())
+  .set('system:index', date.format('YYYY-MM-dd'))
+  
+  }))
+  
+
+print(modis.filterDate(time_start, time_end))
+print(daily)
+
+
+print(
+  ui.Chart.image.series(modis.filterDate(time_start, time_end),
+  geometry, ee.Reducer.mean(), 1000, 'system:time_start')
+  )
+
+print(
+  ui.Chart.image.series(daily, geometry, ee.Reducer.mean(), 1000, 'system:time_start')
+  )
+
+
+
+Map.addLayer(daily.filterDate('2023-06-01', '2023-07-01').toBands().clip(geometry), [], 'daily_ndvi_clipped', false)
+
+Map.addLayer(daily.filterDate('2023-06-01', '2023-07-01').toBands().clipToBoundsAndScale(geometry, null, null, null, 1000), [], 'daily_ndvi', false)
+
+
+Export.image.toDrive({
+  image: daily.filterDate('2023-06-01', '2023-07-01').toBands().clip(geometry), 
+  description: 'daily_ndvi_2023_jun', 
+  scale: 1000, 
+  region: geometry, 
+  maxPixels: 1e13, 
+  folder: 'test', 
+  crs: 'EPSG:4326'
+  
+  })
+
