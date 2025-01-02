@@ -1,0 +1,75 @@
+
+
+ /*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-102: Flood Depth Mapping
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+var cor = [
+  [52.3061190642205,28.827145835706336], 
+  [54.3825350798455,28.827145835706336], 
+  [54.3825350798455,30.227545129963662], 
+  [52.3061190642205,30.227545129963662], 
+  [52.3061190642205,28.827145835706336]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+
+var jrc = ee.ImageCollection("JRC/CEMS_GLOFAS/FloodHazard/v1")
+.filterBounds(geometry)
+
+print(jrc.aggregate_array('return_period'))
+
+var flood_10 = jrc
+.filterBounds(geometry)
+.filter(ee.Filter.eq('return_period', 10)).mosaic()
+
+print(flood_10)
+
+Map.addLayer(flood_10.clip(geometry),{palette:['skyblue', 'blue', 'darkblue']}, 'flood10', false)
+
+print(
+  ui.Chart.image.histogram(flood_10, geometry, 1000)
+  )
+
+
+var flood_20 = jrc
+.filterBounds(geometry)
+.filter(ee.Filter.eq('return_period', 20)).mosaic()
+
+Map.addLayer(flood_20.clip(geometry), {palette:['skyblue', 'blue', 'darkblue']}, 'flood20', false)
+
+
+var flood_100 = jrc
+.filterBounds(geometry)
+.filter(ee.Filter.eq('return_period', 100)).mosaic()
+
+Map.addLayer(flood_100.clip(geometry), {palette:['skyblue', 'blue', 'darkblue']}, 'flood100', false)
+
+Export.image.toDrive({
+  image: flood_10.clip(geometry), 
+  description: 'flood10_iran', 
+  region: geometry, 
+  scale: 1000, 
+  crs: 'EPSG:4326', 
+  folder: 'test', 
+  maxPixels: 1e13
+  })
+
+
+
+
+// var depthVis = {
+//   min: 0,
+//   max: 1,
+//   palette: ['ffffff','0000ff'],
+// };
+
+// Map.addLayer(jrc,depthVis, 'flood_depth',true)
