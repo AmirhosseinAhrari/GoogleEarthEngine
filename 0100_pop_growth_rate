@@ -1,0 +1,93 @@
+ /*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-105: Population Growth Rate, using Python API
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+*/
+
+
+
+import ee
+import geemap as gee
+
+ee.Authenticate()
+ee.Initialize(project = 'ee-amirhosseinahrari')
+
+cor = [[51.10201209984305,35.558966802445994],\
+       [51.6266092678118,35.558966802445994],\
+       [51.6266092678118,35.87005772093195],\
+       [51.10201209984305,35.87005772093195],\
+       [51.10201209984305,35.558966802445994]]
+
+cor
+
+roi = ee.Geometry.Polygon(cor)
+roi
+
+map = gee.Map(basemap = 'SATELLITE')
+map.centerObject(roi)
+map.addLayer(roi,{},'roi')
+map
+
+pop = ee.ImageCollection("JRC/GHSL/P2023A/GHS_POP")
+pop
+
+pop_stack = pop.toBands().clip(roi)
+pop_stack
+
+map.addLayer(pop_stack,{},'pop_stack')
+
+def pop_count(img):
+  pop_sum = img.reduceRegion(reducer = ee.Reducer.sum(), geometry = roi, scale = 100).values().get(0)
+  date = img.date().format('YYYY-MM-dd')
+  return ee.Feature(None, {'date': date, 'pop': pop_sum})
+
+pop_val = pop.map(pop_count)
+pop_val
+
+feature_list = pop_val.toList(pop_val.size()).getInfo()
+feature_list
+
+date = [items['properties']['date'] for items in feature_list]
+date
+
+pop_sum = [items['properties']['pop'] for items in feature_list]
+pop_sum
+
+import numpy as np
+import pandas as pd
+
+df = pd.DataFrame({'date': date, 'pop': pop_sum})
+df['date'] = pd.to_datetime(df['date'])
+df_index = df.set_index('date').round(0)
+df_index
+
+df_index.to_csv('tehran_pop.csv')
+
+"""pop_growth_rate = log(current/previous)/interval
+
+pop_change_rate = ((current - previous) / previous ) * 100
+"""
+
+current = df_index.copy()
+previous = df_index.shift(1)
+previous
+
+df_index['change'] = ((current - previous) / previous) * 100.0
+df_index
+
+df_index['growth_rate'] = np.log(current / previous) / 5.0
+df_index
+
+df_index['pop'].plot()
+
+df_index['change'].plot()
+
+df_index['growth_rate'].plot()
+
+
+
