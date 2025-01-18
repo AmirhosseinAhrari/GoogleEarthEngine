@@ -1,0 +1,67 @@
+# -*- coding: utf-8 -*-
+"""GEE_0009_xee_intro3.ipynb
+
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-106: Introduction to Xee, for GEE Python API
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+
+
+"""
+
+import ee
+import xarray as xr
+
+!pip install xee
+
+import xee
+
+ee.Authenticate()
+ee.Initialize(project = 'ee-amirhosseinahrari', opt_url='https://earthengine-highvolume.googleapis.com')
+
+temp = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR").select('temperature_2m')\
+.filterDate('2010','2011')
+
+ds = xr.open_dataset(temp, engine = 'ee')
+
+ds
+
+jan = ds.sel(time = '2010-01-01')
+
+jan
+
+jan['temperature_2m'].plot(x = 'lon', y = 'lat', cmap = 'jet')
+
+temp_cel = ds - 273.15
+
+temp_cel
+
+jan_cel = temp_cel.sel(time = '2010-01-01')
+
+import matplotlib.pyplot as plt
+
+jan_cel['temperature_2m'].plot(x = 'lon', y = 'lat', cmap = 'jet')
+plt.savefig('jan012010.png', dpi = 360)
+
+weekly = ds.resample(time = 'W').mean()
+
+weekly
+
+monthly = ds.resample(time = 'M').max()
+
+monthly
+
+sub = monthly.sel(lon = slice(0, 150), lat = slice(0, 90), time = '2010-03-31' )
+
+sub
+
+sub['temperature_2m'].plot(x = 'lon', y = 'lat', cmap = 'jet' )
+
+!pip install netCDF4
+
+sub.to_netcdf('monthly_max.nc')
