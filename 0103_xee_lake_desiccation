@@ -1,0 +1,48 @@
+# -*- coding: utf-8 -*-
+"""GEE_0011_lake_desiccation.ipynb
+
+utorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-108: Lake Mapping, using Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+
+"""
+
+import ee
+import xarray as xr
+import numpy as np
+import matplotlib.pyplot as plt
+
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(project = 'ee-your project info', opt_url='https://earthengine-highvolume.googleapis.com')
+
+mod = ee.ImageCollection("MODIS/061/MOD09A1").select('sur_refl_b02', 'sur_refl_b04').filterDate('2001','2025')
+
+loc = ee.Geometry.Rectangle([44.77438907535245, 37.23809308226242, 46.29050235660245, 38.27171994382565])
+
+ds = xr.open_dataset(mod, engine = 'ee', crs = 'EPSG:4326', scale = 0.01, geometry = loc)
+
+ds
+
+green = ds.sur_refl_b04 * 0.0001
+nir  = ds.sur_refl_b02 * 0.0001
+
+nir
+
+ndwi = (green - nir) / (green + nir)
+
+ndwi
+
+ndwi_annual = ndwi.resample(time = 'YE').mean('time')
+
+ndwi_annual
+
+ndwi_annual.plot(x = 'lon', y = 'lat', cmap = 'Blues', col = 'time', col_wrap = 5, robust = True)
+plt.savefig('lake_desiccation.png', dpi = 360, bbox_inches = 'tight')
