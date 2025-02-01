@@ -1,0 +1,71 @@
+# -*- coding: utf-8 -*-
+"""GEE_0012_PM25.ipynb
+
+utorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-109: PM25 Mapping, using Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor!
+
+Original file is located at
+    https://colab.research.google.com/drive/1HCqzIq5H3jrpbAN2V3nIiGlf5CaQIOvX
+"""
+
+import ee
+import xarray as xr
+
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(project = '*****', opt_url='https://earthengine-highvolume.googleapis.com')
+
+col = ee.ImageCollection("NASA/GSFC/MERRA/aer/2").select('DUSCAT25')
+
+time_start = ee.Date('2008')
+time_end = ee.Date('2009')
+time_dif = time_end.difference(time_start, 'days').round()
+time_list = ee.List.sequence(0, ee.Number(time_dif).subtract(1)).map(lambda interval: time_start.advance(interval, 'days'))
+
+def daily_agg(date):
+  start_date = ee.Date(date)
+  end_date = start_date.advance(1, 'days')
+  image = col.filterDate(start_date, end_date).mean()
+  return image.set('system:time_start', start_date.millis())
+
+col_daily = ee.ImageCollection(time_list.map(daily_agg))
+
+loc = [42.537376918517644, 24.73555588205892, 65.91628316851765, 40.01810716361305]
+
+ds = xr.open_dataset(col_daily, engine = 'ee', crs = 'EPSG:4326', scale = 0.5, geometry = loc)
+
+ds
+
+point = ds.sel(lon = 49.217064418517644, lat = 31.173987446501265, method = 'nearest')
+
+point
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize = (7, 3))
+ax.plot(point.time, point.DUSCAT25, ls = ':', marker = 'o', ms = 3, color = 'red')
+ax.set_xlabel('date')
+ax.set_ylabel('DUSCAT25')
+ax.set_title('PM25 Variation')
+plt.savefig('pm25.png', dpi = 360, bbox_inches = 'tight')
+
+ds_mean = ds.mean('time')
+
+ds_mean.DUSCAT25.plot(x = 'lon', y = 'lat', cmap = 'coolwarm', robust = True)
+
+ds_mean.DUSCAT25.to_dataframe().describe()
+
+monthly = ds.resample(time = 'M').mean('time')
+
+monthly
+
+monthly.DUSCAT25.plot(x = 'lon', y = 'lat', col ='time', col_wrap = 4, cmap = 'coolwarm', robust = True)
+plt.savefig('pm25_monthly.png', dpi = 360, bbox_inches = 'tight')
