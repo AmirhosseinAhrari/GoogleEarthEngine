@@ -10,8 +10,6 @@ presented on the Amirhossein Ahrari YouTube channel. You are free to use and mod
 this code for academic and non-academic purposes. Don't forget to subscribe to
 the Amirhossein Ahrari channel and follow the videos to support the instructor!
 
-Original file is located at
-    https://colab.research.google.com/drive/1HCqzIq5H3jrpbAN2V3nIiGlf5CaQIOvX
 """
 
 import ee
