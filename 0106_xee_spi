@@ -1,0 +1,86 @@
+# -*- coding: utf-8 -*-
+"""GEE_0014_spi.ipynb
+
+utorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-111: Standardized Precipitation Index, using Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+import ee
+import xarray as xr
+
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(project = 'ee-amirhosseinahrari', opt_url = 'https://earthengine-highvolume.googleapis.com')
+
+time_start = ee.Date('2000')
+time_end = ee.Date('2024')
+time_dif = time_end.difference(time_start, 'month').round()
+time_list = ee.List.sequence(0, ee.Number(time_dif).subtract(1),1).map(lambda x: time_start.advance(x, 'month'))
+
+col = ee.ImageCollection("NOAA/PERSIANN-CDR").filterDate(time_start, time_end)
+
+def monthly(date):
+  start_date = ee.Date(date)
+  end_date = start_date.advance(1, 'month')
+  img = col.filterDate(start_date, end_date).sum()
+  return img.set('system:time_start', start_date.millis())
+
+monthly_col = ee.ImageCollection(time_list.map(monthly))
+
+loc = [42.49229836400454, 25.412218155914445, 64.99229836400454, 40.18617527857037]
+
+ds = xr.open_dataset(monthly_col, engine = 'ee', crs = 'EPSG:4326', scale = 0.27, geometry = loc)
+
+ds
+
+annual = ds.resample(time = 'YE').sum('time')
+
+annual
+
+import matplotlib.pyplot as plt
+
+annual.precipitation.plot(x = 'lon', y = 'lat', cmap = 'jet_r', col = 'time', robust = True, col_wrap = 5)
+
+point = ds.sel(lon = 48.29307961400454, lat = 32.92450826905307, method = 'nearest')
+
+point
+
+point.time.values
+
+point.precipitation.values
+
+plt.plot(point.time, point.precipitation)
+
+!pip install standard_precip
+
+from standard_precip import spi
+
+import pandas as pd
+
+date = point.time.values
+pr = point.precipitation.values
+
+df = pd.DataFrame({'date': date, 'pr': pr})
+
+df
+
+spi_fun = spi.SPI()
+
+spi_12months = spi_fun.calculate(df, 'date', 'pr', freq = 'M', scale = 12, fit_type ='lmom', dist_type = 'gam')
+
+spi_12months.to_csv('spi_12month.csv')
+
+spi_12months
+
+from standard_precip.utils import plot_index
+
+fig = plot_index(spi_12months, 'date', 'pr_scale_12_calculated_index')
