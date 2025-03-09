@@ -1,0 +1,64 @@
+# -*- coding: utf-8 -*-
+"""GEE_0022_growing_season_length.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-119: Growing Season Length, using Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(project ='ee-amirhosseinahrari', opt_url = 'https://earthengine-highvolume.googleapis.com')
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+collection = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR").filterDate('2000','2020').select('temperature_2m').map(
+    lambda img: img.subtract(273.15).copyProperties(img, img.propertyNames())
+)
+
+collection.limit(10)
+
+ds = xr.open_dataset(collection, engine = 'ee', crs = 'EPSG:4326', scale = 0.27, geometry = roi)
+
+ds
+
+xr.infer_freq(ds.time)
+
+ds['temperature_2m'].attrs['units']  = 'degC'
+
+ds
+
+!pip install xclim
+import xclim
+
+gsl = xclim.indices.growing_season_length(
+    tas = ds.temperature_2m,
+    thresh = '5.0 degC',
+    window = 6,
+    mid_date = '07-01',
+    freq = 'YS'
+)
+
+gsl
+
+import matplotlib.pyplot as plt
+
+gsl.plot(x = 'lon', y = 'lat', col = 'time', col_wrap = 5, robust = True)
+plt.savefig('gsl.png', dpi = 360, bbox_inches = 'tight')
