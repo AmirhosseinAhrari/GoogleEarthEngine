@@ -1,0 +1,82 @@
+# -*- coding: utf-8 -*-
+"""GEE_0024_heatwave_index.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-121: Heat Wave Index, in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(project ='ee-amirhosseinahrari', opt_url = 'https://earthengine-highvolume.googleapis.com')
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+collection = ee.ImageCollection("ECMWF/ERA5/DAILY").select('maximum_2m_air_temperature').filterDate('2000','2020').map(
+    lambda img: img.subtract(273.15).copyProperties(img, img.propertyNames())
+)
+
+ds = xr.open_dataset(
+    collection,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.27,
+    geometry = roi
+)
+
+ds
+
+ds.maximum_2m_air_temperature.attrs['units'] = 'degC'
+
+ds
+
+!pip install xclim
+import xclim
+
+help(xclim.indices.heat_wave_index)
+
+index = xclim.indices.heat_wave_index(
+    ds.maximum_2m_air_temperature,
+    thresh = '25.0 degC',
+    window = 5,
+    freq = 'YS'
+)
+
+index
+
+index.plot(x = 'lon', y = 'lat', col = 'time', robust = True, col_wrap = 5)
+
+index5 = index.resample(time = '5Y').max('time').rename('Heat Wave')
+
+index5.plot(x = 'lon', y = 'lat', col = 'time', col_wrap = 3, robust =True)
+
+sub = index.sel(lon = 24.767281538125793, lat = 60.278314064805166, method = 'nearest' )
+
+sub
+
+df = sub.to_dataframe()['maximum_2m_air_temperature']
+
+import pandas as pd
+
+df.to_csv('heat_wave.csv')
+
+df
+
+df.plot()
