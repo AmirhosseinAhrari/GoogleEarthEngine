@@ -1,0 +1,94 @@
+# -*- coding: utf-8 -*-
+"""GEE_0025_thermal_sharpening.ipynb
+
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-122: Thermal Sharpening using Machine Learning, in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(project ='ee-amirhosseinahrari', opt_url = 'https://earthengine-highvolume.googleapis.com')
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+lst = ee.ImageCollection("MODIS/061/MOD11A2").filterDate('2020','2021').select('LST_Day_1km').mean().multiply(0.02).subtract(273.15)
+ndvi = ee.ImageCollection("MODIS/061/MOD13Q1").filterDate('2020','2021').select('NDVI').mean().multiply(0.0001)
+stack = ee.Image.cat([lst, ndvi]).select([0,1],['lst','ndvi'])
+stack
+
+ds1km = xr.open_dataset(stack, engine = 'ee', crs = 'EPSG:4326', scale = 0.01, geometry = roi)
+ds250m = xr.open_dataset(stack, engine ='ee', crs = 'EPSG:4326', scale = 0.0025, geometry = roi)
+
+ds1km
+
+df1km = ds1km.to_dataframe()
+df250m = ds250m.to_dataframe()
+
+df1km
+
+x = df1km[['ndvi']]
+y = df1km['lst']
+
+from sklearn.model_selection import train_test_split
+
+x_train, x_test, y_train, y_test = train_test_split(
+    x, y,
+    test_size = 0.05,
+    random_state = 42
+)
+
+from sklearn.ensemble import RandomForestRegressor
+
+model = RandomForestRegressor(n_estimators = 100, random_state = 42)
+model.fit(x_train, y_train)
+
+y_pred = model.predict(x_test)
+
+from sklearn.metrics import mean_squared_error, r2_score
+
+import numpy as np
+
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+r2 = r2_score(y_test, y_pred)
+print(f'RMSE:{rmse}')
+print(f'R2:{r2}')
+
+df250m['lst_sharp'] = model.predict(df250m[['ndvi']])
+
+df250m
+
+ds250 = df250m.to_xarray()
+
+ds250
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(1,2, figsize = (8,3))
+plt.tight_layout(w_pad = 3)
+
+ds250.lst.plot(x = 'lon', y = 'lat', robust = True, cmap = 'hot', ax = ax[0])
+ds250.lst_sharp.plot(x = 'lon', y = 'lat', robust =True, cmap ='hot', ax = ax[1])
+
+ax[0].set_title('1000 meters')
+ax[1].set_title('250 meters')
+
+plt.savefig('thsarp.png', dpi = 360, bbox_inches = 'tight')
