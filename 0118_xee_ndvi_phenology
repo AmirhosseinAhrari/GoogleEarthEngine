@@ -1,0 +1,92 @@
+
+
+
+
+# -*- coding: utf-8 -*-
+"""
+
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-123: Vegetation Phenological Aanalysis using NDVI, in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(project = 'ee-amirhosseinahrari', opt_url = 'https://earthengine-highvolume.googleapis.com')
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+ndvi = ee.ImageCollection("NOAA/CDR/VIIRS/NDVI/V1").select('NDVI','QA').filterDate('2021','2022')
+ndvi
+
+def cloud_mask(img):
+  ndvi_img = img.select('NDVI').multiply(0.0001)
+  qa_img = img.select('QA')
+  cloud = qa_img.bitwiseAnd(1 << 1).neq(0)
+  shadow = qa_img.bitwiseAnd(1 << 2).neq(0)
+  mask = cloud.Or(shadow).Not()
+  return ndvi_img.updateMask(mask).copyProperties(img, img.propertyNames())
+
+ndvi_mask = ndvi.map(cloud_mask)
+ndvi_mask
+
+ds = xr.open_dataset(ndvi_mask, engine = 'ee', crs = 'EPSG:4326', scale = 0.1, geometry = roi)
+
+ds
+
+monthly = ds.resample(time = 'M').mean('time')
+
+monthly
+
+monthly.NDVI.plot(x = 'lon', y = 'lat', col = 'time', col_wrap =4, robust =True)
+
+!pip install netCDF4
+import netCDF4
+
+ds.to_netcdf('ndvi_daily.nc')
+
+!pip install dea_tools
+
+import dea_tools.temporal
+
+!pip install netCDF4
+import netCDF4
+
+import xarray as xr
+
+ds = xr.open_dataset('ndvi_daily.nc')
+
+ds
+
+phenology = dea_tools.temporal.xr_phenology(
+    ds.NDVI,
+    stats=['SOS', 'POS', 'EOS', 'Trough', 'vSOS', 'vPOS', 'vEOS', 'LOS', 'AOS', 'ROG', 'ROS'], method_sos='first', method_eos='last', verbose=True
+)
+
+phenology
+
+phenology.SOS.plot(x = 'lon', y = 'lat', robust = True)
+
+phenology.POS.plot(x = 'lon', y = 'lat', robust = True)
+
+phenology.vPOS.plot(x = 'lon', y = 'lat', robust = True)
+
+phenology.LOS.plot(x = 'lon', y = 'lat', robust = True)
