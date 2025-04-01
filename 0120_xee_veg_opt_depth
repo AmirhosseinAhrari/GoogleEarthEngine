@@ -1,0 +1,68 @@
+# -*- coding: utf-8 -*-
+"""
+
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-125: Vegetation Optical Depth Product, in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+
+
+import ee
+import geemap
+import xarray as xr
+
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(project ='ee-amirhosseinahrari', opt_url = 'https://earthengine-highvolume.googleapis.com')
+
+map = geemap.Map()
+map
+
+point = map.draw_last_feature.geometry()
+point
+
+feature = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_2").filterBounds(point).geometry().simplify(1000)
+
+map2 = geemap.Map()
+map2.centerObject(feature, 5)
+map2.addLayer(feature,{},'basin')
+map2
+
+collection =  ee.ImageCollection("projects/sat-io/open-datasets/VODCA/L_BAND_V2").filterDate('2015','2020')
+collection
+
+ds = xr.open_dataset(collection, engine = 'ee', scale = 0.25, crs  = 'EPSG:4326', geometry = feature)
+
+ds
+
+annual = ds.resample(time = 'YE').mean('time')
+
+annual.VOD.plot(x = 'lon', y = 'lat', col = 'time', robust = True, col_wrap = 3)
+
+month = ds.groupby('time.month').mean('time')
+
+import matplotlib.pyplot as plt
+
+month.VOD.plot(x = 'lon', y = 'lat', col = 'month', col_wrap = 4, robust = True)
+plt.savefig('VOD.png', dpi = 360, bbox_inches = 'tight')
+
+ds_sub = ds.sel(lat = 59.530075111125456 , lon =31.23284642583383, method = 'nearest')
+ds_sub
+
+ds_sub.VOD.plot()
+
+!pip install netCDF4
+import netCDF4
+
+annual.to_netcdf('annual.nc')
