@@ -1,0 +1,70 @@
+# -*- coding: utf-8 -*-
+"""GEE_0030_lake_clustering.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-126: Lake Mapping using Clustering Technique, in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(project = 'ee-amirhosseinahrari', opt_url = 'https://earthengine-highvolume.googleapis.com')
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+landsat = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2").filterBounds(roi).filterDate('2021','2025')
+
+def ndwi(img):
+  qa = img.select('QA_PIXEL')
+  cloud = qa.bitwiseAnd(1 << 3).neq(0)
+  cirrus = qa.bitwiseAnd(1 << 2).neq(0)
+  shadow = qa.bitwiseAnd(1 << 4).neq(0)
+  mask = cloud.Or(cirrus).Or(shadow)
+  bands = img.select('SR.*').multiply(2.75e-05).add(-0.2)
+  index = bands.normalizedDifference(['SR_B3','SR_B5']).rename('ndwi')
+  return index.updateMask(mask.Not()).copyProperties(img, img.propertyNames())
+
+landsat_ndwi = landsat.map(ndwi)
+
+ds = xr.open_dataset(landsat_ndwi, engine = 'ee', crs = 'EPSG:4326', scale = 0.003, geometry = roi)
+
+ds
+
+ds_mean = ds.mean('time')
+
+ds_mean.ndwi.plot(x = 'lon', y = 'lat', robust = True)
+
+from sklearn.cluster import KMeans
+
+model = KMeans(n_clusters = 2, random_state = 42)
+
+df = ds_mean.to_dataframe()
+
+df['clustering'] = model.fit_predict(df[['ndwi']])
+
+xarr = df.to_xarray().sortby('lon').sortby('lat')
+xarr
+
+xarr.clustering.plot(x = 'lon', y = 'lat', cmap = 'Blues')
+
+lake_pixels = (xarr.clustering == 0).sum(dim = ['lon','lat'])
+lake_area = (lake_pixels * 300 * 300) / 1e6
+lake_area
