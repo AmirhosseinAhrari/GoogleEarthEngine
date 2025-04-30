@@ -1,0 +1,123 @@
+# -*- coding: utf-8 -*-
+"""GEE_0036_pr_temp_clustering.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-129: Precipiotation Temporal Clustering, in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+
+"""
+
+
+import ee
+import geemap
+import xarray as xr
+
+!pip install  xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+pr = (
+    ee.ImageCollection("NASA/GPM_L3/IMERG_MONTHLY_V07")
+    .select('precipitation')
+    .filterDate('2000', '2025')
+
+)
+
+pr
+
+ds = xr.open_dataset(
+    pr,
+    engine = 'ee',
+    scale = 0.1,
+    crs = 'EPSG:4326',
+    geometry = roi
+)
+
+ds = ds * 730.0
+
+ds
+
+point = ds.sel(
+    lon = 46.99490187913968,
+    lat = 36.71625745730625,
+    method = 'nearest'
+)
+
+point
+
+df = point.to_dataframe()['precipitation'].reset_index()
+
+df
+
+from sklearn.cluster import KMeans
+
+model = KMeans(
+    n_clusters = 4,
+    random_state = 42
+)
+
+df['class'] = model.fit_predict(df[['precipitation']])
+df
+
+df_index = df.set_index('time')
+df_index
+
+df_index.groupby('class').describe()
+
+label = {
+    0: 'heavy',
+    1: 'moderate',
+    2: 'high',
+    3: 'low'
+}
+
+df_index['label']  = df_index['class'].map(label)
+
+import pandas as pd
+
+df_index
+
+df_index.to_csv('pr_dataset.csv')
+
+colors = {
+    'heavy': 'red',
+    'high': 'orange',
+    'moderate': 'green',
+    'low': 'blue'
+}
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize = (10, 3))
+
+for label, group in df_index.groupby('label'):
+  ax.bar(
+      group.index,
+      group.precipitation,
+      label = label,
+      width = 20,
+      color = colors.get(label)
+  )
+
+ax.legend(loc = 'upper left')
+ax.set_ylabel('precipitation (mm/month)')
+
+plt.savefig('pr_clustering.png', dpi = 360, bbox_inches = 'tight')
