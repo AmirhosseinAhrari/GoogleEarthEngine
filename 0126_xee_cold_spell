@@ -1,0 +1,122 @@
+# -*- coding: utf-8 -*-
+"""GEE_0038_cold_spell.ipynb
+
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-131: Cold Spell Detection and Monitoring, in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'TERRAIN')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+temp = (
+    ee.ImageCollection("ECMWF/ERA5/DAILY")
+    .filterDate('2010','2015')
+    .select(['mean_2m_air_temperature'],['temp_air'])
+
+)
+
+temp
+
+ds = xr.open_dataset(
+    temp,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.11,
+    geometry = roi
+)
+
+ds = ds - 273.15
+
+annual = ds.resample(time = 'YE').mean('time')
+
+annual
+
+annual.temp_air.plot(
+     x = 'lon',
+     y = 'lat',
+     col  = 'time',
+     col_wrap = 3,
+     robust = True
+ )
+
+!pip install xclim
+import xclim
+
+import xclim.indices as xindices
+
+help(xindices.cold_spell_days)
+
+ds.temp_air.attrs['units'] = 'degC'
+ds
+
+cs_days = xindices.cold_spell_days(
+    ds.temp_air,
+    thresh = '-10 degC',
+    window = 5,
+    freq = 'YS-JUL'
+)
+
+cs_days.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 3
+)
+
+help(xindices.cold_spell_frequency)
+
+cs_freq = xindices.cold_spell_frequency(
+    ds.temp_air,
+    thresh = '-10 degC',
+    window = 5,
+    freq = 'YS-JUL'
+)
+
+cs_freq.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 3,
+)
+
+help(xindices.cold_spell_max_length)
+
+cs_max_length = xindices.cold_spell_max_length(
+    ds.temp_air,
+    thresh = '-10 degC',
+    window = 1,
+    freq = 'YS-JUL'
+)
+
+cs_max_length.plot(
+    x ='lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 3
+)
