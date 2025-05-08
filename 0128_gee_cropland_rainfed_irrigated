@@ -1,0 +1,109 @@
+
+
+// Tutorial Code by Amirhossein Ahrari
+// YouTube: https://www.youtube.com/@amirhosseinahrarigee
+// Tutorial Video: Google Earth Engine Tutorial-133: Irrigated and Rainfed Cropland Mapping
+
+// This code is part of a tutorial series on Earth Engine programming techniques
+// presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+// this code for academic and non-academic purposes. Don't forget to subscribe to
+// the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+var table = ee.FeatureCollection("WWF/HydroATLAS/v1/Basins/level05")
+
+
+var cor1 = [46.06447471590808,37.4664136308292] 
+
+var geometry = ee.Geometry.Point(cor1)
+
+
+var cropland = ee.ImageCollection("projects/sat-io/open-datasets/GFSAD/LGRIP30").mosaic()
+
+Map.addLayer(cropland,{min: 0, max: 3}, 'cropland', false)
+
+Map.addLayer(table, [], 'basins',false)
+
+var roi = table.filterBounds(geometry).geometry().simplify(1000)
+
+Map.addLayer(roi, [],'roi_basin', false)
+
+Map.centerObject(roi)
+
+Map.addLayer(cropland.clip(roi), {min: 0, max: 3}, 'roi_cropland', false)
+
+Export.image.toDrive({
+  image: cropland.clip(roi), 
+  description: 'cropland_roi', 
+  scale: 100, 
+  region: roi, 
+  crs: 'EPSG:4326', 
+  maxPixels: 1e13, 
+  folder: 'test'
+  })
+  
+  
+
+var cor2 = [
+  [45.65420086591323,36.5852635591113],
+  [46.599025084663225,36.5852635591113], 
+  [46.599025084663225,37.24404911390012], 
+  [45.65420086591323,37.24404911390012], 
+  [45.65420086591323,36.5852635591113]
+  ]
+
+var geometry2 = ee.Geometry.Polygon(cor2)
+
+var irrigated = cropland.eq(2).selfMask()
+
+Map.addLayer(irrigated.clip(roi),[],'irrigated',false)
+
+
+var irrigated_vec = irrigated.reduceToVectors({
+  geometry: geometry2, scale: 100
+  })
+  
+Map.addLayer(irrigated_vec,[],'irrigated_vec',false)
+
+
+Export.table.toDrive({
+  collection: irrigated_vec, description: 'irrigated_vector', fileFormat: 'SHP'
+  })
+
+
+var ndvi = ee.ImageCollection("MODIS/061/MOD13Q1")
+.filterDate('2020','2025')
+.map(function(img){
+  return img.select('NDVI').multiply(0.0001)
+  .copyProperties(img, img.propertyNames())
+  })
+
+
+print(
+  ui.Chart.image.series(ndvi, irrigated_vec, ee.Reducer.mean(),
+  250, 'system:time_start')
+  )
+
+var cor3 = [
+  [46.20901043622573,36.542743443804014], 
+  [46.48366863935073,36.542743443804014], 
+  [46.48366863935073,36.76749276467415], 
+  [46.20901043622573,36.76749276467415], 
+  [46.20901043622573,36.542743443804014]
+  ]
+
+var geometry3 = ee.Geometry.Polygon(cor3)
+
+var rainfed = cropland.eq(3).selfMask()
+
+var rainfed_vec = rainfed.reduceToVectors({
+  geometry: geometry3, scale: 100
+  })
+  
+Map.addLayer(rainfed_vec,[],'rainfed_vec',false)
+
+
+print(
+  ui.Chart.image.series(ndvi, rainfed_vec, ee.Reducer.mean(),
+  250, 'system:time_start')
+  )
+
