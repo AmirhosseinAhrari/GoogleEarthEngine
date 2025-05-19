@@ -1,0 +1,139 @@
+# -*- coding: utf-8 -*-
+"""GEE_0045_soil_moisture_index_ssmi.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-135: Standardized Soil Moisture Index, in Python API
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+!pip install xee
+import xee
+import xarray as xr
+import numpy as np
+import pandas as pd
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+time_start = ee.Date('2016')
+time_end = ee.Date('2024')
+time_dif = time_end.difference(time_start, 'month').round()
+time_list = ee.List.sequence(0, ee.Number(time_dif).subtract(1), 1).map(lambda x: time_start.advance(x, 'month'))
+time_list
+
+smap = (
+    ee.ImageCollection("NASA/SMAP/SPL3SMP_E/005")
+    .select('soil_moisture_am')
+    .filterDate(time_start, time_end)
+)
+
+smap.size()
+
+def monthly(date, col):
+  start_date = ee.Date(date)
+  end_date = start_date.advance(1, 'month')
+  img = col.filterDate(start_date, end_date).mean()
+  return img.set('system:time_start', start_date.millis())
+
+smap_monthly = ee.ImageCollection(time_list.map(lambda x: monthly(x, smap)))
+
+smap_monthly
+
+ds = xr.open_dataset(
+    smap_monthly,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.1,
+    geometry = roi
+)
+
+ds
+
+# ssi, ssmi
+# (sm_i - sm_mean) / (sm_std)
+
+ds_mean = ds.mean(dim = 'time')
+
+ds_mean
+
+ds_mean.soil_moisture_am.plot(
+    x = 'lon',
+    y = 'lat',
+    robust = True
+)
+
+ds_std = ds.std(dim = 'time')
+
+ds_std.soil_moisture_am.plot(
+    x = 'lon',
+    y = 'lat',
+    robust = True
+)
+
+ssi = (ds - ds_mean) / ds_std
+
+sub = ssi.sel(time = ssi.time.dt.year == 2019)
+sub
+
+sub.soil_moisture_am.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 4,
+    robust = True,
+)
+
+point = ssi.sel(lon = 48.49132412153378, lat = 31.045046261441296, method = 'nearest')
+
+point
+
+df = point.to_dataframe()['soil_moisture_am']
+
+df.plot()
+
+ssi_annual = ssi.resample(time = 'YE').mean('time')
+
+ssi_annual
+
+import matplotlib.pyplot as plt
+
+ssi_plot = ssi_annual.soil_moisture_am.plot(
+    x = 'lon',
+    y = 'lat',
+    robust = True,
+    col = 'time',
+    col_wrap = 4,
+)
+
+for ax in ssi_plot.axes.flat:
+  ax.set_ylabel('')
+  ax.set_xlabel('')
+  ax.set_xticks([])
+  ax.set_yticks([])
+  ax.title.set_fontsize(15)
+
+plot_cbar = ssi_plot.cbar
+plot_cbar.ax.tick_params(labelsize = 15)
+plot_cbar.set_label('SSI', fontsize = 15)
+
+plt.savefig('ssi_annual.png', dpi = 360, bbox_inches = 'tight')
+
