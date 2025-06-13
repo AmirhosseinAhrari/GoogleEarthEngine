@@ -1,0 +1,96 @@
+# -*- coding: utf-8 -*-
+"""0048_temp_anomaly_detection.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-138: Temeprature Anomaly and Extreme Detection in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+!pip install xee
+import xee
+import xarray as xr
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+temp = (
+    ee.ImageCollection("MODIS/061/MOD11A2")
+    .filterDate('2001','2025')
+    .select('LST_Day_1km')
+    .map(lambda img: img.multiply(0.02).subtract(273.15).copyProperties(img, img.propertyNames()))
+)
+
+temp
+
+xtemp = xr.open_dataset(
+    temp,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.01,
+    geometry = roi
+)
+
+xtemp
+
+xtemp_mean = xtemp.mean(dim  = ['lon', 'lat'])
+
+xtemp_mean.LST_Day_1km.plot()
+
+xtemp_inte = xtemp_mean.interpolate_na(dim = 'time')
+
+xtemp_df = xtemp_inte.to_dataframe()
+
+xtemp_df.to_csv('temp_df.csv')
+
+from statsmodels.tsa.seasonal import seasonal_decompose
+
+model = seasonal_decompose(
+    xtemp_df,
+    model = 'additive',
+    period = 46
+)
+
+model.plot()
+plt.show()
+
+final_df = pd.DataFrame({
+    'time': model.observed.index,
+    'observations': model.observed.values,
+    'trend': model.trend.values,
+    'seasonal': model.seasonal.values,
+    'residuals': model.resid.values
+})
+
+final_df = final_df.set_index('time')
+
+final_df.residuals.plot()
+
+final_df.to_csv('temp_anomaly.csv')
+
+pos = final_df[final_df['residuals'] >= 0]
+neg = final_df[final_df['residuals'] < 0]
+
+plt.bar(pos.index, pos.residuals, width = 10)
+plt.bar(neg.index, neg.residuals, width = 10)
