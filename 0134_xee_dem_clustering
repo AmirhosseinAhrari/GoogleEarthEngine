@@ -1,0 +1,95 @@
+# -*- coding: utf-8 -*-
+"""GEE_0049_elevation_mapping.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-139: Elevation (DEM) Mapping in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+!pip install xee
+import xee
+import numpy as np
+import pandas as pd
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+dem = (
+    ee.Image("NASA/NASADEM_HGT/001")
+    .select([0],['elevation'])
+)
+
+dem
+
+xdem = xr.open_dataset(
+    dem,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    geometry = roi,
+    scale = 0.001
+)
+
+xdem
+
+xdem.elevation.plot(
+    x = 'lon',
+    y = 'lat',
+    robust = True
+)
+
+df = xdem.to_dataframe()
+
+df
+
+from sklearn.cluster import KMeans
+
+model = KMeans(n_clusters = 5)
+
+model.fit(df)
+
+df['classes'] = model.predict(df)
+
+df
+
+xarr = df.to_xarray().sortby(['lon','lat'])
+
+xarr
+
+xarr.classes.plot(
+    x = 'lon',
+    y = 'lat'
+)
+
+class_num = np.unique(xarr.classes.values)
+class_num
+
+xarr.elevation.where(xarr.classes == 1).mean().values
+
+for i in class_num:
+  class_mean = xarr.elevation.where(xarr.classes == i).mean().values.round(2)
+  print(f'class {i} average: {class_mean}')
+  class_max = xarr.elevation.where(xarr.classes == i).max().values.round(2)
+  print(f'class {i} maximum: {class_max}')
+  class_min = xarr.elevation.where(xarr.classes == i).min().values.round(2)
+  print(f'class {i} minimum: {class_min}')
+  print('-----------------------------------')
