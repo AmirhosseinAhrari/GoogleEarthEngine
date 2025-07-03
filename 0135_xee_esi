@@ -1,0 +1,92 @@
+# -*- coding: utf-8 -*-
+"""GEE_0050_Evaporative_Stress_Index.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-140: Evaporative Stress Index in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+!pip install xee
+import xee
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url='https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+iran = (
+    ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level0")
+    .filterBounds(roi)
+    .geometry()
+)
+
+map.addLayer(iran, {}, 'Iran')
+
+collection = (
+    ee.ImageCollection('projects/climate-engine/esi/12wk')
+    .filterDate('2001','2025')
+    .map(lambda img: img.clip(iran).copyProperties(img, img.propertyNames()))
+)
+
+collection
+
+ds = xr.open_dataset(
+    collection,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    geometry = iran,
+    scale = 0.1
+)
+
+ds
+
+ds.isel(time = 100).ESI.plot(
+    x = 'lon',
+    y = 'lat',
+    robust = True
+)
+
+lat = 37.06016443230056
+lon = 45.95842739971374
+point = ds.sel(
+    lat = lat,
+    lon = lon,
+    method = 'nearest'
+)
+
+point.ESI.plot()
+
+df = point.to_dataframe().ESI
+
+df
+
+pos = df[df >= 0]
+neg = df[df < 0]
+
+fig, ax = plt.subplots(figsize = (9,3))
+
+ax.plot(df.index, df, color = 'black', lw = 0.5)
+ax.bar(pos.index, pos, color = 'tab:blue', width = 20)
+ax.bar(neg.index, neg, color = 'red', width = 20)
