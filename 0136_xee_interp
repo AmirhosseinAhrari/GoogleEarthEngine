@@ -1,0 +1,89 @@
+# -*- coding: utf-8 -*-
+"""GEE_0051_interpolation.ipynb
+
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-141: Temporal Interpolation for EO Products, in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+
+"""
+
+import ee
+import geemap
+!pip install xee
+import xee
+import xarray as xr
+import pandas as pd
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+collection = (
+    ee.ImageCollection("JRC/GHSL/P2023A/GHS_BUILT_S")
+    .filterBounds(roi)
+    .select('built_surface')
+)
+
+collection
+
+ds = xr.open_dataset(
+    collection,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    geometry = roi,
+    scale = 0.001
+)
+
+ds
+
+ds.sel(time = slice('2010','2020')).built_surface.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    robust = True
+)
+
+time_start = ds.time.values[0]
+time_end = ds.time.values[-1]
+time_list = pd.date_range(time_start, time_end, freq = 'YE')
+
+time_list
+
+ds_annual = ds.interp(time = time_list)
+
+ds_annual
+
+ds_annual.sel(time = slice('2010', '2020')).built_surface.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 5,
+    robust =True
+)
+
+ds_area = ds.sum(dim = ['lat','lon'])
+annual_area = ds_annual.sum(dim = ['lat', 'lon'])
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize = (7,3))
+
+ax.plot(ds_area.time, ds_area.built_surface, marker = 'o')
+ax.plot(annual_area.time, annual_area.built_surface, marker = 'o', color = 'tab:red', alpha = 0.4)
