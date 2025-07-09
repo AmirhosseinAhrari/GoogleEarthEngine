@@ -1,0 +1,200 @@
+# -*- coding: utf-8 -*-
+"""GEE_0052_et_modelling.ipynb
+
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-142: ET modelling, in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+!pip install xee
+import xee
+import xarray as xr
+import pandas as pd
+import numpy as np
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url='https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+time_start = ee.Date('2010')
+time_end = ee.Date('2020')
+time_dif = time_end.difference(time_start, 'month').round()
+time_list  =  ee.List.sequence(0, ee.Number(time_dif).subtract(1)).map(lambda i: time_start.advance(i, 'month'))
+time_list
+
+et = (
+    ee.ImageCollection('projects/earthengine-legacy/assets/projects/usgs-ssebop/modis_et_v5_monthly')
+    .filterDate(time_start, time_end)
+    .select([0],['SSEBop'])
+)
+
+veg = (
+    ee.ImageCollection("MODIS/061/MOD13A2")
+    .filterDate(time_start, time_end)
+    .select('NDVI', 'EVI')
+)
+
+temp = (
+    ee.ImageCollection("MODIS/061/MOD11A2")
+    .filterDate(time_start, time_end)
+    .select('LST_Day_1km', 'LST_Night_1km')
+)
+
+etm = (
+    ee.ImageCollection("MODIS/061/MOD16A2GF")
+    .filterDate(time_start, time_end)
+    .select(['ET'],['MODET'])
+)
+
+def monthly(date, col):
+  start_date = ee.Date(date)
+  end_date = start_date.advance(1, 'month')
+  img_mean = col.filterDate(start_date, end_date).mean()
+  return img_mean.set('system:time_start', start_date.millis())
+
+et_monthly = ee.ImageCollection(time_list.map(lambda x: monthly(x, et)))
+veg_monthly = ee.ImageCollection(time_list.map(lambda x: monthly(x, veg)))
+temp_monthly = ee.ImageCollection(time_list.map(lambda x: monthly(x, temp)))
+etm_monthly = ee.ImageCollection(time_list.map(lambda x: monthly(x, etm)))
+
+collection = veg_monthly.combine(temp_monthly).combine(etm_monthly).combine(et_monthly)
+
+collection
+
+ds = xr.open_dataset(
+    collection,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.01,
+    geometry = roi
+)
+
+ds
+
+df = ds.to_dataframe().dropna()
+
+df
+
+from sklearn.model_selection import train_test_split
+
+df.columns
+
+x = df[['NDVI', 'EVI', 'LST_Day_1km', 'LST_Night_1km', 'MODET']]
+y = df['SSEBop']
+
+x_train, x_test, y_train, y_test  = train_test_split(x, y, test_size = 0.2, random_state = 42)
+
+from sklearn.ensemble import RandomForestRegressor
+
+model = RandomForestRegressor(
+    n_estimators = 100,
+    random_state = 42
+)
+
+model.fit(x_train, y_train)
+
+y_pred = model.predict(x_test)
+
+from sklearn.metrics import mean_absolute_error, r2_score
+
+rmse = np.sqrt(mean_absolute_error(y_test, y_pred))
+rmse
+
+r2score = r2_score(y_test, y_pred)
+r2score
+
+df['SSEBop_predicted'] = model.predict(df[['NDVI', 'EVI', 'LST_Day_1km', 'LST_Night_1km', 'MODET']])
+
+xarr = df.to_xarray().sortby(['lat','lon','time'])
+
+xarr.SSEBop.isel(time = 100).plot(
+    x = 'lon',
+    y = 'lat',
+    robust = True
+)
+
+xarr.SSEBop_predicted.isel(time = 100).plot(
+    x = 'lon',
+    y = 'lat',
+    robust = True
+)
+
+time_start = ee.Date('2023')
+time_end = ee.Date('2025')
+time_dif = time_end.difference(time_start, 'month').round()
+time_list  =  ee.List.sequence(0, ee.Number(time_dif).subtract(1)).map(lambda i: time_start.advance(i, 'month'))
+time_list
+
+veg = (
+    ee.ImageCollection("MODIS/061/MOD13A2")
+    .filterDate(time_start, time_end)
+    .select('NDVI', 'EVI')
+)
+
+temp = (
+    ee.ImageCollection("MODIS/061/MOD11A2")
+    .filterDate(time_start, time_end)
+    .select('LST_Day_1km', 'LST_Night_1km')
+)
+
+etm = (
+    ee.ImageCollection("MODIS/061/MOD16A2GF")
+    .filterDate(time_start, time_end)
+    .select(['ET'],['MODET'])
+)
+
+def monthly(date, col):
+  start_date = ee.Date(date)
+  end_date = start_date.advance(1, 'month')
+  img_mean = col.filterDate(start_date, end_date).mean()
+  return img_mean.set('system:time_start', start_date.millis())
+
+veg_monthly = ee.ImageCollection(time_list.map(lambda x: monthly(x, veg)))
+temp_monthly = ee.ImageCollection(time_list.map(lambda x: monthly(x, temp)))
+etm_monthly = ee.ImageCollection(time_list.map(lambda x: monthly(x, etm)))
+
+collection = veg_monthly.combine(temp_monthly).combine(etm_monthly)
+
+ds = xr.open_dataset(
+    collection,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.01,
+    geometry = roi
+)
+
+df = ds.to_dataframe().dropna()
+
+df['SSEBop_pr'] = model.predict(df[['NDVI', 'EVI', 'LST_Day_1km', 'LST_Night_1km', 'MODET']])
+
+xarr = df.to_xarray().sortby(['lat','lon', 'time'])
+
+xarr.SSEBop_pr.isel(time = 10).plot(
+    x = 'lon',
+    y ='lat',
+    robust = True
+)
+
+!pip install netCDF4
+import netCDF4
+
+xarr.SSEBop_pr.to_netcdf('SSEBop_2023_2024.nc')
