@@ -1,0 +1,94 @@
+# -*- coding: utf-8 -*-
+"""GEE_0054_snow_start_end.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-143: Snow Cover, Start Day and End Day, in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+!pip install xee
+import xee
+import xarray as xr
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'TERRAIN')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+collection = (
+    ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
+    .filterDate('2010','2020')
+    .select('snow_cover')
+
+)
+
+collection.limit(10)
+
+ds = xr.open_dataset(
+    collection,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.11,
+    geometry = roi
+)
+
+ds.snow_cover.attrs['units'] = 'kg m-2'
+
+ds
+
+!pip install xclim
+
+from xclim.indicators.land import snw_season_start, snw_season_end
+
+snow_start = snw_season_start(
+    snw = ds.snow_cover,
+    thresh = '4 kg m-2',
+    window = 14,
+    freq = 'YS-JAN'
+)
+
+snow_start.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 5,
+    cmap = 'Spectral',
+    robust = True
+)
+
+snow_end = snw_season_end(
+    snw = ds.snow_cover,
+    thresh = '4 kg m-2',
+    window = 14,
+    freq = 'YS-JAN'
+)
+
+import matplotlib.pyplot as plt
+
+snow_end.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 5,
+    cmap = 'Spectral',
+    robust = True
+)
+
+plt.savefig('snow_end.png', dpi = 360, bbox_inches = 'tight')
