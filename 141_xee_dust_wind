@@ -1,0 +1,98 @@
+# -*- coding: utf-8 -*-
+"""GEE_0058_dust_wind.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-146: Dust and Wind Association Analysis, in Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+!pip install xee
+import xee
+import xarray as xr
+import matplotlib.pyplot as plt
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari', opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+pm = (
+    ee.ImageCollection("projects/sat-io/open-datasets/GLOBAL-SATELLITE-PM25/MONTHLY")
+    .select([0],['pm'])
+    .filterDate('2010','2015')
+
+)
+
+vs = (
+    ee.ImageCollection("IDAHO_EPSCOR/TERRACLIMATE")
+    .select('vs')
+    .filterDate('2010','2015')
+    .map(lambda img: img.multiply(0.01).copyProperties(img, ['system:time_start']))
+)
+
+join = ee.Join.inner()
+filter = ee.Filter.equals(
+    leftField = 'system:time_start',
+    rightField = 'system:time_start'
+)
+join_col = ee.ImageCollection(
+    join.apply(pm, vs, filter)
+)
+
+collection = join_col.map(
+    lambda el: ee.Image.cat(el.get('primary'), el.get('secondary'))
+)
+
+collection
+
+ds = xr.open_dataset(
+    collection,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.1,
+    geometry = roi
+)
+
+ds
+
+ds_mean = ds.mean(dim = ['lat','lon'])
+
+ds_mean
+
+df = ds_mean.to_dataframe()
+
+fig, ax = plt.subplots(figsize = (8, 3))
+
+ax.plot(df.index, df.pm)
+ax1 = ax.twinx()
+ax1.bar(df.index, df.vs, color = 'red', width = 10, alpha = 0.2)
+
+df.corr()
+
+plt.scatter(df.pm, df.vs)
+
+import statsmodels.api as sm
+
+x = df.vs.values
+y = df.pm.values
+x = sm.add_constant(x)
+
+model = sm.OLS(y, x).fit()
+
+print(model.summary())
