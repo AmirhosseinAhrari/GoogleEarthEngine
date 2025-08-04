@@ -1,0 +1,45 @@
+
+
+/*
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-147: Landsat Landcover Product (1984-2022)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+*/
+
+
+var cor = [49.64500915431612,37.14344151987502]
+
+var geometry = ee.Geometry.Point(cor)
+
+var roi = ee.FeatureCollection("FAO/GAUL/2015/level1")
+.filterBounds(geometry).geometry().simplify(1000)
+
+Map.centerObject(roi)
+Map.addLayer(roi)
+
+var annual = ee.ImageCollection("projects/sat-io/open-datasets/GLC-FCS30D/annual")
+.filterBounds(roi)
+.mosaic()
+
+print(annual)
+
+Map.addLayer(annual.clip(roi),[],'landcover',false)
+
+Export.image.toDrive({
+  image: annual.clip(roi), 
+  description: 'annual_map_guilan', 
+  scale: 100, 
+  region: roi, 
+  crs: 'EPSG:4326', 
+  folder: 'test',
+  maxPixels: 1e13
+  
+  })
