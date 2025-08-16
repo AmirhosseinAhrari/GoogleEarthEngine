@@ -1,0 +1,77 @@
+# -*- coding: utf-8 -*-
+"""GEE_0062_precipitation_pattern_pca.ipynb
+
+utorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-149: Precipitation Spatio-Temporal Analysis using PCA, using Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+roi  = ee.FeatureCollection("UN/Geodata/BNDA_simplified/current").filter(ee.Filter.stringContains('nam_en', 'Iran')).geometry()
+roi
+
+map = geemap.Map(basemap = 'SATELLITE')
+map.centerObject(roi, 5)
+map.addLayer(roi, {}, 'roi')
+map
+
+pr = (
+    ee.ImageCollection("NOAA/PERSIANN-CDR")
+    .filterDate('2001','2010')
+    .map(lambda img: img.clip(roi).copyProperties(img, img.propertyNames()))
+
+)
+
+pr
+
+ds = xr.open_dataset(
+    pr,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    geometry = roi,
+    scale = 0.27
+)
+
+ds
+
+ds_mean = ds.mean(dim = 'time')
+
+ds_mean.precipitation.plot(
+    x = 'lon',
+    y = 'lat',
+    robust = True
+)
+
+!pip install xeofs
+import xeofs as xf
+
+pca = xf.single.EOF(n_modes = 10)
+pca.fit(ds, dim = 'time')
+
+comp = pca.components()
+
+comp.precipitation.plot(
+    x = 'lon',
+    y = 'lat',
+    robust = True,
+    col = 'mode',
+    col_wrap = 5
+)
