@@ -1,0 +1,103 @@
+# -*- coding: utf-8 -*-
+"""GEE_0068_water_temperature.ipynb
+
+utorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-153: Water Temperature Estimation using Landsat-8 and Landsat-9
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+def oli(img):
+  qa = img.select('QA_PIXEL')
+  cloud = qa.bitwiseAnd(1 << 1).neq(0)
+  cirrus = qa.bitwiseAnd(2 << 1).neq(0)
+  cloud2 = qa.bitwiseAnd(3 << 1).neq(0)
+  shadow = qa.bitwiseAnd(4 << 1).neq(0)
+  cloud_mask = cloud.Or(cirrus).Or(cloud2).Or(shadow)
+  ms = img.select('SR_B.*').multiply(2.75e-05).add(-0.2)
+  ndwi = ms.normalizedDifference(['SR_B3', 'SR_B5']).rename('ndwi')
+  water_mask = ndwi.gt(0.1)
+  lst = img.select('ST_B10').multiply(0.00341802).add(149)
+  return lst.updateMask(water_mask).updateMask(cloud_mask.Not()).copyProperties(img, ['system:time_start'])
+
+
+l8 = (
+    ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+    .filterDate('2024','2025')
+    .filterBounds(roi)
+    .map(oli)
+
+)
+
+l9 = (
+    ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+    .filterDate('2024', '2025')
+    .filterBounds(roi)
+    .map(oli)
+
+)
+
+collection = l8.merge(l9).sort('system:time_start')
+
+collection
+
+ds = xr.open_dataset(
+    collection,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.0003,
+    geometry = roi
+)
+
+ds = ds.sortby('time') - 273.15
+
+ds_roll = ds.rolling(time = 7, center = True, min_periods = 1).mean('time')
+
+import matplotlib.pyplot as plt
+
+ds_roll.sel(time = ds.time.dt.month == 7).ST_B10.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 3,
+    robust = True,
+    cmap = 'turbo'
+)
+
+plt.savefig('water_temp.png', dpi = 360, bbox_inches = 'tight')
+
+ds.sel(time = ds.time.dt.month == 7).ST_B10.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 3,
+    robust = True
+)
+
+ds_mean = ds_roll.mean(['lon', 'lat']).to_dataframe()
+ds_mean.plot()
