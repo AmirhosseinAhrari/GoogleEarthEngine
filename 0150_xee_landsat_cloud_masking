@@ -1,0 +1,81 @@
+# -*- coding: utf-8 -*-
+"""GEE_0070_landsat_cloud_mask.ipynb
+
+utorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-155: Landsat Cloud Masking using Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+def cloud_mask(img):
+  qa = img.select('QA_PIXEL')
+  dilated = qa.bitwiseAnd(1 << 1).neq(0)
+  cirrus = qa.bitwiseAnd(2 << 1).neq(0)
+  cloud = qa.bitwiseAnd(3 << 1).neq(0)
+  shadow = qa.bitwiseAnd(4 << 1).neq(0)
+  mask = dilated.Or(cirrus).Or(cloud).Or(shadow)
+  ms = img.select('SR_B.*').multiply(2.75e-05).add(-0.2)
+  ndvi = ms.normalizedDifference(['SR_B5', 'SR_B4']).rename('ndvi')
+  return ndvi.updateMask(mask.Not()).copyProperties(img, ['system:time_start'])
+
+
+landsat = (
+    ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+    .filterDate('2024','2025')
+    .filterBounds(roi)
+    .map(cloud_mask)
+)
+
+landsat
+
+ds = xr.open_dataset(
+    landsat,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    geometry = roi,
+    scale = 0.001
+)
+
+ds = ds.sortby('time') * 1
+
+ds.ndvi.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 6,
+    robust = True
+)
+
+ds_rol = ds.rolling(time = 7, center = True, min_periods = 1).mean('time')
+
+ds_rol.ndvi.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    robust = True,
+    col_wrap = 6
+)
