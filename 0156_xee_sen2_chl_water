@@ -1,0 +1,84 @@
+# -*- coding: utf-8 -*-
+"""GEE_0079_sen2_chl.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-161: Sentinel-2 Water Chlorophyll_a Index using Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap= 'TERRAIN')
+map
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+def sen2q(img):
+  cloud = img.select('probability')
+  clear_pixels = cloud.lt(20)
+  bands = img.select('B.*').multiply(0.0001)
+  ndwi = bands.normalizedDifference(['B3','B8']).rename('ndwi')
+  water_body = ndwi.gt(0.1)
+  chl = bands.expression('4.26 * ((b3 / b1) ** 3.94)', {
+      'b1': bands.select('B1'),
+      'b3': bands.select('B3')
+  }).rename('chl')
+  return chl.updateMask(clear_pixels).updateMask(water_body).copyProperties(img, ['system:time_start'])
+
+
+sen2 = (
+    ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    .linkCollection(ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY"),'probability')
+    .filterDate('2024', '2025')
+    .filterBounds(roi)
+    .map(sen2q)
+)
+
+sen2
+
+ds = xr.open_dataset(
+    sen2,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.001,
+    geometry = roi
+)
+
+ds = ds.sortby('time') * 1
+
+ds_monthly = ds.resample(time = 'M').median('time')
+
+import matplotlib.pyplot as plt
+
+ds_monthly.chl.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 6,
+    robust = True,
+    vmin = 2,
+    vmax = 30,
+    cmap = 'rainbow',
+    levels = 20
+)
+
+plt.savefig('sen2_chl.png', dpi = 360, bbox_inches = 'tight')
+
