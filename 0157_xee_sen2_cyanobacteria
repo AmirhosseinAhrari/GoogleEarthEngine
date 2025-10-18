@@ -1,0 +1,92 @@
+# -*- coding: utf-8 -*-
+"""GEE_0080_sen2_cyano.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-162: Sentinel-2 Water Cyanobacteria Index using Python API (Xee)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+import ee
+import geemap
+import xarray as xr
+!pip install xee
+import xee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+def cyano_index(img):
+  cloud = img.select('probability')
+  cloud_free = cloud.lt(20)
+  sr = img.select('B.*').multiply(0.0001)
+  ndwi = sr.normalizedDifference(['B3','B8']).rename('ndwi')
+  water = ndwi.gt(0.1)
+  cyano = sr.expression('115530.31 * (((b3 * b4)/b2) ** 2.38)',{
+      'b2': sr.select('B2'),
+      'b3': sr.select('B3'),
+      'b4': sr.select('B4')
+  }).rename('cyano')
+  return cyano.updateMask(water).updateMask(cloud_free).copyProperties(img, ['system:time_start'])
+
+
+
+sen2 = (
+    ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    .linkCollection(ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY"), 'probability')
+    .filterDate('2024','2025')
+    .filterBounds(roi)
+    .map(cyano_index)
+)
+
+
+sen2
+
+ds = xr.open_dataset(
+    sen2,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.001,
+    geometry = roi
+)
+
+ds = ds.sortby('time') * 1
+
+ds_monthly = ds.resample(time = 'M').mean('time')
+ds_monthly
+
+import matplotlib.pyplot as plt
+
+ds_monthly.cyano.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    cmap = 'rainbow',
+    robust = True,
+    col_wrap = 6,
+    vmax = 200
+)
+
+plt.savefig('sen2_cyano.png', dpi = 360, bbox_inches = 'tight')
+
+ds_mean = ds_monthly.mean(dim = ['lat', 'lon'])
+df = ds_mean.to_dataframe()
+df.to_csv('sen2_cyano.csv')
+
+df.plot(marker = 'o', figsize = (7,3))
+plt.savefig('sen2_cyano_graph.png', bbox_inches = 'tight', dpi = 360)
