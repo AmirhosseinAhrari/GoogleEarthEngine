@@ -1,0 +1,102 @@
+# -*- coding: utf-8 -*-
+"""GEE_0091_pr_change.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-171: Precipitation Annual Change Detection using Differencing Technique
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+!pip install --upgrade xee
+
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map()
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+border = (
+    ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017")
+    .filterBounds(roi)
+    .geometry().simplify(100)
+)
+
+map.addLayer(border, {},'border')
+
+gpm = (
+    ee.ImageCollection("NASA/GPM_L3/IMERG_MONTHLY_V07")
+    .filterDate('2015','2025')
+    .select('precipitation')
+    .map(
+        lambda img: img.clip(border).copyProperties(img, ['system:time_start'])
+    )
+)
+
+gpm.getInfo()
+
+import xarray as xr
+
+pr = xr.open_dataset(
+    gpm,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.1,
+    geometry = border
+)
+
+pr = pr.sortby('time') * 730.001
+
+import numpy as np
+
+pr_annual = pr.resample(time = 'YE').sum('time')
+pr_annual = xr.where(pr_annual == 0,  np.nan, pr_annual)
+
+pr_annual.precipitation.plot.contourf(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 5,
+    robust = True,
+    levels = 10
+)
+
+annual_change = pr_annual.diff('time')
+
+import matplotlib.pyplot as plt
+
+annual_change.precipitation.plot.contourf(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 5,
+    robust = True,
+    levels = 20
+)
+
+plt.savefig('pr_change.png', dpi = 360, bbox_inches = 'tight')
+
+mean_change = annual_change.mean(dim = 'time')
+
+mean_change.precipitation.plot.contourf(
+    x = 'lon',
+    y = 'lat',
+    robust =True,
+    levels = 10
+)
