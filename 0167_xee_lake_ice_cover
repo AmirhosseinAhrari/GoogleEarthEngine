@@ -1,0 +1,92 @@
+# -*- coding: utf-8 -*-
+"""GEE_0090_ice_lake.ipynb
+
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-172: Lake Ice Cover Monitoring using Sentinel-1
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+!pip install --upgrade xee
+
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project ='ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+lake = (
+    ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
+    .filterDate('2024','2025')
+    .filterBounds(roi)
+    .filter(ee.Filter.calendarRange(6,9,'month'))
+    .select('label')
+    .mode().eq(0).selfMask()
+)
+
+
+sen1 = (
+    ee.ImageCollection("COPERNICUS/S1_GRD")
+    .filterDate('2022','2024')
+    .filterBounds(roi)
+    .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+    .filter(ee.Filter.eq('instrumentMode', 'IW'))
+    .select('VV')
+    .filter(ee.Filter.eq('orbitProperties_pass', 'DESCENDING'))
+    .map(
+        lambda img: img.updateMask(lake).copyProperties(img,['system:time_start'])
+    )
+)
+
+sen1
+
+map.addLayer(lake.clip(roi), {},'lake')
+
+import xarray as xr
+
+ds = xr.open_dataset(
+    sen1,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.001,
+    geometry = roi
+)
+
+ds = ds.sortby('time') * 1
+
+ds_roll = ds.rolling(time = 10, center = True, min_periods = 1).mean('time')
+
+ds_weekly = ds_roll.resample(time = 'W').mean('time')
+
+ds_weekly.mean(dim = ['lat', 'lon']).to_dataframe().plot()
+
+plot = ds_weekly.VV.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 10,
+    cmap = 'turbo',
+    robust = True
+)
+
+for x in plot.axes.flat:
+  x.set_title(x.get_title(), fontsize = 15)
+
