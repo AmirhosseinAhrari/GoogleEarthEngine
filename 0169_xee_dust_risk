@@ -1,0 +1,194 @@
+# -*- coding: utf-8 -*-
+"""GEE_0092_dust_risk.ipynb
+
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-174: Dust Risk Mapping using Machine Learning Technique
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+!pip install --upgrade xee
+
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map()
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+time_start = ee.Date('2020')
+time_end = ee.Date('2021')
+time_dif = time_end.difference(time_start, 'month').round()
+time_list = ee.List.sequence(0, ee.Number(time_dif).subtract(1)).map(
+    lambda x: time_start.advance(x, 'month')
+)
+
+aod = (
+    ee.ImageCollection("MODIS/061/MCD19A2_GRANULES")
+    .filterDate(time_start, time_end)
+    .select(['Optical_Depth_055'],['aod'])
+    .filter(ee.Filter.eq('SATELLITE','T'))
+    .filterBounds(roi)
+
+)
+
+def monthly(date,col):
+  start_date = ee.Date(date)
+  end_date = start_date.advance(1, 'month')
+  col_img = col.filterDate(start_date, end_date).mean()
+  col_size = ee.Number(col_img.bandNames().size())
+  return col_img.set('system:time_start', start_date.millis()).set('band_size', col_size)
+
+aod_monthly = ee.ImageCollection(
+    time_list.map(
+        lambda x:monthly(x,aod)
+    )
+)
+
+terra = (
+    ee.ImageCollection("IDAHO_EPSCOR/TERRACLIMATE")
+    .filterDate(time_start, time_end)
+    .select('pr','soil','vs', 'tmmn', 'tmmx')
+)
+
+
+terra_monthly = ee.ImageCollection(
+    time_list.map(
+        lambda x: monthly(x, terra)
+    )
+)
+
+
+ndvi = (
+    ee.ImageCollection("MODIS/061/MOD13Q1")
+    .filterDate(time_start, time_end)
+    .select(['NDVI'],['ndvi'])
+)
+
+ndvi_monthly = ee.ImageCollection(
+    time_list.map(
+        lambda x: monthly(x, ndvi)
+    )
+)
+
+collection = aod_monthly.combine(terra_monthly).combine(ndvi_monthly)
+
+mask = (
+    ee.ImageCollection("MODIS/061/MCD12Q1")
+    .filterDate(time_start, time_end)
+    .select('LC_Type1')
+    .mode().eq(17).Not().rename('water_mask')
+)
+
+import xarray as xr
+
+ds_mask = xr.open_dataset(
+    mask,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    geometry = roi,
+    scale = 0.1
+)
+
+ds_mask = ds_mask.squeeze('time').drop_vars('time') * 1
+
+ds_mask.water_mask.plot(
+    x = 'lon',
+    y = 'lat'
+)
+
+ds = xr.open_dataset(
+    collection,
+    engine ='ee',
+    crs = 'EPSG:4326',
+    geometry = roi,
+    scale = 0.1
+)
+
+ds = ds.sortby('time') * 1
+
+import numpy as np
+
+ds = xr.where(ds_mask.water_mask == 0, np.nan, ds)
+
+ds['dust'] = ((ds.aod * 0.001) >= 0.5).astype(int)
+
+ds
+
+ds.dust.plot(
+    x  = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 6
+)
+
+ds.aod.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    robust = True,
+    col_wrap = 6
+)
+
+df = ds.to_dataframe().dropna()
+df
+
+from sklearn.model_selection import train_test_split
+
+x = df[['ndvi','pr','soil','vs', 'tmmn', 'tmmx']]
+y = df['dust']
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size = 0.2, random_state = 42)
+
+from sklearn.linear_model import LogisticRegression
+
+model = LogisticRegression(max_iter = 1000)
+model.fit(x_train, y_train)
+
+y_pred = model.predict(x_test)
+y_prob = model.predict_proba(x_test)
+
+from sklearn.metrics import classification_report, roc_auc_score
+
+class_rep = classification_report(y_test, y_pred)
+print(class_rep)
+
+roc = roc_auc_score(y_test, y_prob[:,1])
+print(roc)
+
+df['risk']  = model.predict_proba(df[['ndvi','pr','soil','vs', 'tmmn', 'tmmx']])[:,1]
+
+dfx = df.to_xarray().sortby(['time','lat','lon'])
+dfx
+
+risk = (dfx.risk * 1000).mean(dim = 'time')
+
+risk.plot(
+    x = 'lon',
+    y ='lat',
+    robust = True
+)
+
+dfx.risk.plot(
+    x = 'lon',
+    y = 'lat',
+    col = 'time',
+    col_wrap = 6,
+    robust = True
+)
