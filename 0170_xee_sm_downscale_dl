@@ -1,0 +1,223 @@
+# -*- coding: utf-8 -*-
+"""GEE_0093_sm_downscaling_dl.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-175: Soil Moisture Downscaling using Deep Learning Technique
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install --upgrade xee
+
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map()
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+time_start = ee.Date('2016')
+time_end = ee.Date('2024')
+time_dif = time_end.difference(time_start, 'month').round()
+time_list = ee.List.sequence(0, ee.Number(time_dif).subtract(1)).map(
+    lambda x: time_start.advance(x, 'month')
+)
+
+
+smap = (
+    ee.ImageCollection("NASA/SMAP/SPL3SMP_E/005")
+    .filterDate(time_start, time_end)
+    .select(['soil_moisture_am'],['sm'])
+)
+
+def monthly(date, col):
+  start_date = ee.Date(date)
+  end_date = start_date.advance(1, 'month')
+  col_agg = col.filterDate(start_date, end_date).mean()
+  return col_agg.set('system:time_start', start_date.millis())
+
+
+smap_monthly = ee.ImageCollection(
+    time_list.map(
+        lambda x: monthly(x, smap)
+    )
+)
+
+
+ndvi = (
+    ee.ImageCollection("MODIS/061/MOD13Q1")
+    .filterDate(time_start, time_end)
+    .select(['NDVI','EVI'],['ndvi','evi'])
+)
+
+ndvi_monthly = ee.ImageCollection(
+    time_list.map(
+        lambda x: monthly(x, ndvi)
+    )
+)
+
+temp = (
+    ee.ImageCollection("MODIS/061/MOD11A2")
+    .filterDate(time_start, time_end)
+    .select(['LST_Day_1km','LST_Night_1km'],['temp_day','temp_night'])
+)
+
+temp_monthly = ee.ImageCollection(
+    time_list.map(
+        lambda x: monthly(x, temp)
+    )
+)
+
+et = (
+    ee.ImageCollection("MODIS/061/MOD16A2GF")
+    .filterDate(time_start, time_end)
+    .select(['ET'],['et'])
+)
+
+et_monthly = ee.ImageCollection(
+    time_list.map(
+        lambda x: monthly(x, et)
+    )
+)
+
+landcover = (
+    ee.ImageCollection("MODIS/061/MCD12Q1")
+    .filterDate(time_start, time_end)
+    .select('LC_Type1')
+    .mode().rename('landcover')
+)
+
+topo = ee.Image("USGS/GTOPO30")
+
+
+collection = smap_monthly.combine(ndvi_monthly).combine(temp_monthly).combine(et_monthly).map(
+    lambda x: x.addBands(topo).addBands(landcover)
+)
+
+collection
+
+import xarray as xr
+
+ds10km = xr.open_dataset(
+    collection,
+    engine ='ee',
+    crs = 'EPSG:4326',
+    scale = 0.1,
+    geometry = roi
+)
+
+ds10km = ds10km.sortby('time') * 1
+
+df10km = ds10km.to_dataframe().dropna()
+
+df10km
+
+from sklearn.preprocessing import StandardScaler
+
+x10km = df10km[['ndvi','evi', 'et','temp_day','temp_night', 'elevation', 'landcover']]
+scaler_x10km = StandardScaler()
+x10km_standard = scaler_x10km.fit_transform(x10km)
+x10km_standard
+
+y10km.values.reshape(-1,1).shape
+
+y10km = df10km['sm']
+scaler_y10km = StandardScaler()
+y10km_standard = scaler_y10km.fit_transform(y10km.values.reshape(-1,1))
+y10km_standard
+
+from sklearn.model_selection import train_test_split
+
+x_train, x_test, y_train, y_test = train_test_split(
+    x10km_standard, y10km_standard, test_size = 0.2, random_state = 42
+)
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+
+x_train.shape[1]
+
+model = Sequential()
+model.add(Dense(64, activation = 'relu', input_dim = x_train.shape[1]))
+model.add(Dense(32, activation = 'relu'))
+model.add(Dense(16, activation = 'relu'))
+model.add(Dense(1))
+model.compile(
+    optimizer = 'adam',
+    loss = 'mse',
+    metrics = ['mae']
+)
+
+model.fit(
+    x_train, y_train,
+    epochs = 100,
+    batch_size = 8,
+    validation_split = 0.2,
+    verbose = 1
+)
+
+loss, mae = model.evaluate(x_test, y_test)
+
+y_pred = model.predict(x_test)
+
+from sklearn.metrics import r2_score, mean_squared_error
+
+import numpy as np
+
+r2 = r2_score(y_test, y_pred)
+print(f'R2: {r2}')
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+print(f'RMSE: {rmse}')
+
+ds1km = xr.open_dataset(
+    collection,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.01,
+    geometry = roi
+)
+
+ds1km = ds1km.sortby('time') * 1
+
+df1km = ds1km.to_dataframe().dropna()
+
+x1km = df1km[['ndvi','evi', 'et','temp_day','temp_night', 'elevation', 'landcover']]
+scaler_x1km = StandardScaler()
+x1km_standard = scaler_x1km.fit_transform(x1km)
+x1km_standard
+
+y1km = df1km['sm']
+scaler_y1km = StandardScaler()
+y1km_standard = scaler_y1km.fit_transform(y1km.values.reshape(-1,1))
+y1km_standard
+
+df1km['sm_1km'] = scaler_y1km.inverse_transform(model.predict(x1km_standard))
+
+ds_final = df1km.to_xarray().sortby(['time','lat','lon'])
+
+ds_sub = ds_final.sel(time = '2020')
+
+ds_sub.sm.plot(
+    x= 'lon', y = 'lat', robust = True, col = 'time', cmap = 'turbo', col_wrap = 6
+)
+
+ds_sub.sm_1km.plot(
+    x = 'lon', y = 'lat', robust = True, col = 'time', cmap = 'turbo', col_wrap = 6
+)
