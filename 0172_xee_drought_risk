@@ -1,0 +1,106 @@
+# -*- coding: utf-8 -*-
+"""GEE_0095_drought_risk.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-177: Drought Risk Mapping using Random Forest Modelling
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install --upgrade xee
+
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map()
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+water_mask = (
+    ee.ImageCollection("MODIS/061/MCD12Q1")
+    .mode().select('LC_Type1').eq(17).Not()
+)
+
+
+collection = (
+    ee.ImageCollection("IDAHO_EPSCOR/TERRACLIMATE")
+    .filterDate('2000','2025')
+    .select('aet', 'pr', 'soil', 'tmmn','tmmx','pdsi')
+    .map(
+        lambda x: x.updateMask(water_mask).copyProperties(x, ['system:time_start'])
+    )
+)
+
+collection
+
+import xarray as xr
+
+ds = xr.open_dataset(
+    collection,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.5,
+    geometry = roi
+)
+
+ds
+
+ds = ds.sortby('time') * 1
+
+df = ds.to_dataframe().dropna()
+
+x = df[['aet','pr','soil','tmmn','tmmx']]
+x
+
+df['drought'] = ((df['pdsi'] * 0.01) < -2.0).astype(int)
+df
+
+y = df['drought']
+
+from sklearn.model_selection import train_test_split
+
+x_train, x_test, y_train, y_test = train_test_split(
+    x, y, test_size = 0.2, random_state = 42
+)
+
+from sklearn.ensemble import RandomForestClassifier
+
+model = RandomForestClassifier(n_estimators = 500, random_state = 42)
+
+model.fit(x_train, y_train)
+
+y_prob = model.predict_proba(x_test)[:,1]
+
+from sklearn.metrics import roc_auc_score
+
+test = roc_auc_score(y_test, y_prob)
+test
+
+df['risk'] = model.predict_proba(x)[:,1]
+
+dx = df.to_xarray().sortby(['time','lat','lon'])
+
+dx
+
+risk_map = dx.risk.median(dim = 'time')
+
+risk_map.plot.contourf(
+    x = 'lon', y = 'lat', robust = True, cmap = 'turbo', levels = 20
+)
