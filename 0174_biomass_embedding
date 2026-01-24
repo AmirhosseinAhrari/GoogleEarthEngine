@@ -1,0 +1,145 @@
+# -*- coding: utf-8 -*-
+"""GEE_0097_embedding_biomass.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-179: Forest Biomass Modelling using Satellite Embedding Dataset
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install --upgrade xee
+
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+     project = 'ee-amirhosseinahrari',
+     opt_url = 'https://earthengine-highvolume.googleapis.com'
+ )
+
+import geemap
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+biomass =(
+    ee.Image("LARSE/GEDI/GEDI04_B_002").select('MU')
+)
+
+emb = (
+    ee.ImageCollection("GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL")
+    .filterDate('2019','2021')
+    .filterBounds(roi)
+    .mean()
+)
+
+stack = emb.addBands(biomass)
+stack
+
+import xarray as xr
+
+ds = xr.open_dataset(
+    stack,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.01,
+    geometry = roi
+)
+
+ds = ds.squeeze('time').drop_vars('time') * 1
+
+ds
+
+ds.MU.plot(
+    x = 'lon', y = 'lat', robust = True
+)
+
+ds.A10.plot(
+    x = 'lon', y = 'lat', robust = True
+)
+
+df = ds.to_dataframe().dropna()
+
+df
+
+from sklearn.preprocessing import StandardScaler
+
+scaler_x = StandardScaler()
+scaler_y = StandardScaler()
+
+x = df.drop('MU', axis = 1)
+x_scaled = scaler_x.fit_transform(x)
+x_scaled
+
+y.values.shape
+
+y.values.reshape(-1,1).shape
+
+y = df['MU']
+y_scaled = scaler_y.fit_transform(y.values.reshape(-1,1))
+y_scaled
+
+from sklearn.model_selection import train_test_split
+
+x_train, x_test, y_train, y_test = train_test_split(
+    x_scaled, y_scaled, test_size = 0.2, random_state = 42
+)
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+
+x_scaled.shape[1]
+
+model = Sequential()
+model.add(Dense(64, activation = 'relu', input_dim = x_scaled.shape[1], ))
+model.add(Dense(32, activation = 'relu'))
+model.add(Dense(16, activation = 'relu'))
+model.add(Dense(1))
+
+model.compile(optimizer = 'adam', loss = 'mse', metrics = ['mae'])
+
+model.fit(
+    x_train, y_train,
+    epochs = 100,
+    batch_size = 32,
+    validation_split = 0.2,
+    verbose = 1
+)
+
+model.evaluate(x_test, y_test)
+
+df1km = ds.to_dataframe()
+
+scaler_x1km = StandardScaler()
+x1km = df1km.drop('MU', axis = 1)
+x1km_scaled = scaler_x1km.fit_transform(x1km)
+x1km_scaled
+
+df1km['biomass'] =scaler_y.inverse_transform(model.predict(x1km_scaled))
+
+dx = df1km.to_xarray().sortby('lat','lon')
+
+dx.MU.plot(
+    x = 'lon', y = 'lat', robust = True
+)
+
+dx.biomass.plot(
+    x = 'lon', y = 'lat', robust = True, vmin =0
+)
+
+dx['biomass_cor'] = xr.where(dx.biomass < 0, 0.0, dx.biomass)
+
+dx.biomass_cor.plot(
+    x = 'lon', y = 'lat', robust = True
+)
