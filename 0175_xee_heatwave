@@ -1,0 +1,92 @@
+# -*- coding: utf-8 -*-
+"""GEE_0098_heatwave.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-180: Heatwave Mapping and Monitoring using Xee
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+!pip install --upgrade xee
+
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map()
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+era5 = (
+    ee.ImageCollection("ECMWF/ERA5/DAILY")
+    .filterDate('2010','2020')
+    .select(['maximum_2m_air_temperature'],['tmax'])
+)
+
+era5
+
+import xarray as xr
+
+ds = xr.open_dataset(
+    era5,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.3,
+    geometry = roi
+)
+
+ds =  ds.sortby('time') - 273.15
+
+tmax = ds.tmax
+tmax.attrs['units'] = 'degC'
+
+tmax
+
+!pip install xclim
+
+from xclim.indicators.atmos import heat_wave_index
+
+hw = heat_wave_index(
+    tasmax = ds.tmax,
+    thresh = '25 degC',
+    window = 5,
+    freq = 'YS'
+)
+
+import matplotlib.pyplot as plt
+
+hw.plot.contourf(
+    x = 'lon', y = 'lat', col = 'time', col_wrap = 5, cmap ='turbo', levels = 15
+)
+
+plt.savefig('hw_index.png', dpi = 360, bbox_inches = 'tight')
+
+point = hw.sel(lat = 46.90484567845552, lon =2.872345969440646, method = 'nearest')
+
+df = point.to_dataframe().heat_wave_index
+df
+
+fig, ax = plt.subplots(figsize = (8,2))
+
+ax.plot(df.index, df, marker = 'o', color = 'red', ls = '--')
+ax.set_ylabel('Heat Wave Days')
+ax.grid(ls = ':', alpha = 0.5)
+ax.set_title('Location:'+' lat:2.87' + ' lon:46.90')
+ax.tick_params(axis = 'both', direction = 'in', top = True, right = True)
+
+plt.savefig('hw_plot.png', dpi = 360, bbox_inches = 'tight')
