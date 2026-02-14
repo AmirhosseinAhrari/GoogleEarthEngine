@@ -1,0 +1,73 @@
+# -*- coding: utf-8 -*-
+"""GEE_0102_array_stat.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-184: Image Statistics
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+!pip install --upgrade xee
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map()
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+smap = (
+    ee.ImageCollection("NASA/SMAP/SPL3SMP_E/005")
+    .filterDate('2020','2021')
+    .select('soil_moisture_am')
+)
+smap
+
+import xarray as xr
+
+ds = xr.open_dataset(
+    smap,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.1,
+    geometry = roi
+)
+
+ds
+
+ds = ds.sortby('time') * 1
+
+ds_mean = ds.mean(dim = 'time')
+
+ds_mean.soil_moisture_am.plot(
+    x = 'lon', y = 'lat', robust = True
+)
+
+mean_val = ds_mean.median(dim = ['lon','lat']).soil_moisture_am.values
+mean_val
+
+mean_ser = ds.mean(dim = ['lon','lat']).to_dataframe()
+mean_ser
+
+mean_ser.describe()
+
+mean_ser.plot()
+
+ds_sub = ds.sel(lon =52.72936677576619 , lat =36.56616811342166, method = 'nearest' )
+
+ds_sub.to_dataframe().soil_moisture_am.plot()
