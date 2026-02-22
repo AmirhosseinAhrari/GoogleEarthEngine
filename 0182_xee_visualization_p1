@@ -1,0 +1,113 @@
+# -*- coding: utf-8 -*-
+"""GEE_0106_xee_xarray_plot.ipynb
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-187: Visualization and Plotting (Part -1)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+!pip install --upgrade xee
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map()
+map
+
+point = map.draw_last_feature.geometry()
+point
+
+roi = (
+    ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017")
+    .filterBounds(point).geometry().simplify(1000)
+)
+
+map.addLayer(roi,{},'roi')
+
+spei = (
+    ee.ImageCollection("CSIC/SPEI/2_10")
+    .filterDate('2000','2025')
+    .select('SPEI_12_month')
+)
+
+spei
+
+import xarray as xr
+
+ds = xr.open_dataset(
+    spei,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.5,
+    geometry = roi
+)
+
+ds = ds.sortby('time') * 1
+
+ds_season = ds.groupby('time.season').mean('time')
+
+ds_season.SPEI_12_month.plot(
+    x = 'lon', y = 'lat', col = 'season'
+)
+
+shp = geemap.ee_to_gdf(ee.FeatureCollection(roi))
+
+!pip install rioxarray
+import rioxarray
+
+ds_rename = ds_season.rename({'lon':'x','lat':'y'})
+
+ds_clip = ds_rename.rio.clip(shp.geometry, shp.crs)
+
+ds_clip.SPEI_12_month.plot.contourf(
+    x = 'x', y = 'y', col = 'season', robust = True, cmap = 'turbo_r', levels = 10
+)
+
+import matplotlib.pyplot as plt
+
+
+
+fig, ax = plt.subplots(1, 4, figsize = (20,3.5))
+plt.tight_layout(w_pad = 2.5)
+
+ax1 = ax[0]
+plot = ds_clip.sel(season = 'DJF').SPEI_12_month.plot.contourf(
+    x = 'x', y = 'y', robust = True, cmap = 'turbo_r', levels = 10, ax = ax1
+)
+ax1.set_title('Winter')
+
+
+ax2 = ax[1]
+plot = ds_clip.sel(season = 'MAM').SPEI_12_month.plot.contourf(
+    x = 'x', y = 'y', robust = True, cmap = 'turbo_r', levels = 10, ax = ax2
+)
+ax2.set_title('Spring')
+
+
+ax3 = ax[2]
+plot = ds_clip.sel(season = 'JJA').SPEI_12_month.plot.contourf(
+    x = 'x', y = 'y', robust = True, cmap = 'turbo_r', levels = 10, ax = ax3
+)
+ax3.set_title('Summer')
+
+
+ax4 = ax[3]
+plot = ds_clip.sel(season = 'SON').SPEI_12_month.plot.contourf(
+    x = 'x', y = 'y', robust = True, cmap = 'turbo_r', levels = 10, ax = ax4
+)
+ax4.set_title('Autumn')
+
+plt.savefig('spei_seasonal.png', dpi = 360, bbox_inches = 'tight')
