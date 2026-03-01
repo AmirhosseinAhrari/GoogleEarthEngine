@@ -1,0 +1,68 @@
+# -*- coding: utf-8 -*-
+"""GEE_0108_plotting.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-188: Visualization and Plotting (Part -2)
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+"""
+
+!pip install --upgrade xee
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+collection = (
+    ee.ImageCollection("CSIC/SPEI/2_10").select('SPEI_12_month')
+    .filterDate('1990','2026')
+)
+
+collection
+
+import xarray as xr
+
+ds = xr.open_dataset(
+    collection,
+    engine = 'ee',
+    geometry = roi,
+    scale = 0.55,
+    crs = 'EPSG:4326'
+)
+
+ds = ds.sortby('time') * 1
+
+import matplotlib.pyplot as plt
+
+df = ds.SPEI_12_month.to_dataframe().reset_index()[['time','SPEI_12_month']].set_index('time')
+
+df.plot()
+
+fig, ax = plt.subplots(figsize = (7,2))
+
+ax.plot(df.index, df, color = 'tab:red', lw = 1.2, ls = '-', label = 'SPEI')
+ax.legend(loc = 'lower left')
+ax.set_title('Drought Monitoring')
+ax.grid(alpha = 0.5, ls = ':')
+ax.tick_params(axis = 'both', direction = 'in', top = True, right = True)
+ax.set_ylabel('SPEI')
+ax.set_xlabel('12-Months')
+
+plt.savefig('SPEI.png', bbox_inches = 'tight', dpi = 360)
