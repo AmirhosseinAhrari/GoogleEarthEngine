@@ -1,0 +1,103 @@
+# -*- coding: utf-8 -*-
+"""01_session1_intro_img_col_xarray.ipynb
+
+utorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Landsat - Sentinel Data Analysis in GEE using Python API Session1: Image Collection vs. Xarray
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install --upgrade xee
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+l9 = (
+    ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+    .filterDate('2025','2026')
+    .filterBounds(roi)
+    .filter(ee.Filter.lt('CLOUD_COVER',10))
+    .select('SR_B.*')
+    .filter(ee.Filter.eq('WRS_PATH', 166))
+    .filter(ee.Filter.eq('WRS_ROW', 34))
+    .first()
+
+)
+
+l9
+
+import xarray as xr
+
+ds = xr.open_dataset(
+    l9,
+    engine = 'ee',
+    crs = 'EPSG:3857',
+    geometry = roi,
+    scale = 30
+)
+
+ds = ds.squeeze('time').drop_vars('time') * 1
+
+ds
+
+sen2 = (
+    ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    .filterDate('2025','2026')
+    .filterBounds(roi)
+    .select('B[2-4]','B8')
+    .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
+    .first().multiply(1)
+)
+
+sen2
+
+test = (
+    ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    .filterDate('2025','2026')
+    .filterBounds(roi)
+    .select('B[2-4]','B8')
+    .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
+    .first().multiply(1)
+)
+
+test
+
+ds2 = xr.open_dataset(
+    sen2,
+    engine = 'ee',
+    crs = 'EPSG:3857',
+    scale = 10,
+    geometry = roi
+)
+
+ds_test = xr.open_dataset(
+    test,
+    engine = 'ee',
+    crs = 'EPSG:3857',
+    scale = 10,
+    geometry = roi
+)
+
+ds_test = ds_test.squeeze('time').drop_vars('time') * 1
+
+ds_test * 0.0001
