@@ -32,19 +32,46 @@ map
 roi = map.draw_last_feature.geometry()
 roi
 
+path_row_filter = ee.Filter.And(
+    ee.Filter.eq('WRS_PATH', 162),
+    ee.Filter.eq('WRS_ROW', 34)
+)
+
+cloud_cover = ee.Filter.And(
+    ee.Filter.gt('CLOUD_COVER', 15),
+    ee.Filter.lt('CLOUD_COVER', 30)
+)
+
 l9 = (
     ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
     .filterDate('2025','2026')
     .filterBounds(roi)
-    .filter(ee.Filter.lt('CLOUD_COVER',10))
-    .select('SR_B.*')
-    .filter(ee.Filter.eq('WRS_PATH', 166))
-    .filter(ee.Filter.eq('WRS_ROW', 34))
+    .filter(path_row_filter)
+    .filter(cloud_cover)
+    .sort('system:time_start', False)
     .first()
-
 )
 
-l9
+
+
+def cloud_mask(img):
+  qa = img.select('QA_PIXEL')
+  bit1 = qa.bitwiseAnd(1 << 1).neq(0)
+  bit2 = qa.bitwiseAnd(1 << 2).neq(0)
+  bit3 = qa.bitwiseAnd(1 << 3).neq(0)
+  bit4 = qa.bitwiseAnd(1 << 4).neq(0)
+  mask_layer = bit1.Or(bit2).Or(bit3).Or(bit4)
+  sr = img.select('SR_B.*').multiply(2.75e-05).add(-0.2)
+  return sr.updateMask(mask_layer.Not())
+
+l9_masked = cloud_mask(l9)
+
+# equation b5, b4 (b5 - b4) / (b5 + b4) >>> -1 to 1
+l9_ndvi = l9_masked.normalizedDifference(['SR_B5','SR_B4']).rename('ndvi')
+l9_ndvi2 = l9_masked.expression('(nir - red) / (nir + red)', {
+    'nir': l9_masked.select('SR_B5'),
+    'red': l9_masked.select('SR_B4')
+}).rename('ndvi')
 
 import xarray as xr
 
@@ -53,51 +80,62 @@ ds = xr.open_dataset(
     engine = 'ee',
     crs = 'EPSG:3857',
     geometry = roi,
-    scale = 30
+    scale = 100
 )
 
 ds = ds.squeeze('time').drop_vars('time') * 1
 
-ds
-
-sen2 = (
-    ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
-    .filterDate('2025','2026')
-    .filterBounds(roi)
-    .select('B[2-4]','B8')
-    .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
-    .first().multiply(1)
+ds.SR_B4.plot(
+    x = 'X', y = 'Y', robust = True
 )
-
-sen2
-
-test = (
-    ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
-    .filterDate('2025','2026')
-    .filterBounds(roi)
-    .select('B[2-4]','B8')
-    .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
-    .first().multiply(1)
-)
-
-test
 
 ds2 = xr.open_dataset(
-    sen2,
+    l9_masked,
     engine = 'ee',
     crs = 'EPSG:3857',
-    scale = 10,
+    geometry = roi,
+    scale = 100
+)
+
+ds2 = ds2.squeeze('time').drop_vars('time') * 1
+
+ds2.SR_B4.plot(
+    x = 'X', y = 'Y', robust = True
+)
+
+nir = ds2['SR_B5']
+red = ds2['SR_B4']
+ds2['ndvi'] = (nir - red) / (nir + red)
+ds2
+
+ds2.ndvi.plot(
+    x = 'X', y = 'Y', robust = True
+)
+
+ds_ndvi = xr.open_dataset(
+    l9_ndvi,
+    engine = 'ee',
+    crs = 'EPSG:3857',
+    geometry = roi,
+    scale = 100
+)
+
+ds_ndvi = ds_ndvi.squeeze('time').drop_vars('time') * 1
+
+ds_ndvi.ndvi.plot(
+    x = 'X', y = 'Y', robust = True
+)
+
+ds_ndvi2 = xr.open_dataset(
+    l9_ndvi2,
+    engine = 'ee',
+    crs = 'EPSG:3857',
+    scale = 100,
     geometry = roi
 )
 
-ds_test = xr.open_dataset(
-    test,
-    engine = 'ee',
-    crs = 'EPSG:3857',
-    scale = 10,
-    geometry = roi
+ds_ndvi2 = ds_ndvi2.squeeze('time').drop_vars('time') * 1
+
+ds_ndvi2.ndvi.plot(
+    x = 'X', y = 'Y', robust = True
 )
-
-ds_test = ds_test.squeeze('time').drop_vars('time') * 1
-
-ds_test * 0.0001
