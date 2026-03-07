@@ -1,0 +1,136 @@
+# -*- coding: utf-8 -*-
+"""03_session3_img_clip_spectral_indices.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Landsat - Sentinel Data Analysis in GEE using Python API Session2: Import Shapefil and Image Clipping
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install --upgrade xee
+!pip install -U geemap
+!pip install rioxarray
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url ='https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map()
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+border = (
+    ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level1")
+    .filterBounds(roi).geometry().simplify(1000)
+)
+
+border
+
+map.addLayer(border, {}, 'border')
+
+sen2 = (
+    ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    .filterDate('2025','2026')
+    .filterBounds(border)
+    .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
+    .select('B.*')
+    .median()
+)
+
+def spectral_index(img):
+  sr = img.multiply(0.0001)
+  # b1, b2 = (b1 - b2) / (b1 + b2), -1 +1
+  ndvi = sr.normalizedDifference(['B8','B4']).rename('ndvi')
+  ndwi = sr.normalizedDifference(['B3','B8']).rename('ndwi')
+  return ndvi.addBands(ndwi)
+
+sen2_index = spectral_index(sen2)
+
+sen2_index
+
+import xarray as xr
+
+ds = xr.open_dataset(
+    sen2_index,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.001,
+    geometry = border
+)
+
+ds = ds.squeeze('time').drop_vars('time') * 1
+
+ds.ndvi.plot(
+    x = 'lon', y ='lat', robust = True
+)
+
+vec  = geemap.ee_to_gdf(ee.FeatureCollection(border))
+
+vec.plot()
+
+import rioxarray
+
+vec.crs
+
+ds_dims = ds.rio.set_spatial_dims(x_dim = 'lon', y_dim = 'lat')
+ds_clip = ds.rio.clip(vec.geometry, vec.crs)
+ds_clip
+
+ds_clip.ndvi.plot(
+    x = 'lon', y = 'lat', robust = True, cmap = 'RdYlGn', levels = 15
+)
+
+ds.ndwi.plot(
+    x = 'lon', y = 'lat', robust = True, cmap = 'Blues',
+)
+
+ds_clip.ndwi.plot(
+    x = 'lon', y = 'lat', robust = True, cmap = 'Blues', vmin = 0, vmax = 1
+)
+
+l9 = (
+    ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+    .filterDate('2025','2026')
+    .filterBounds(border)
+    .select('ST_B10')
+    .filter(ee.Filter.lt('CLOUD_COVER', 20))
+    .median().multiply(0.00341802).add(149).rename('lst')
+)
+
+l9
+
+ds_lst = xr.open_dataset(
+    l9,
+    engine = 'ee',
+    crs = 'EPSG:4326',
+    scale = 0.001,
+    geometry = border
+)
+
+lst_cel = ds_lst.squeeze('time').drop_vars('time') - 273.15
+
+lst_dim = lst_cel.rio.set_spatial_dims(x_dim = 'lon', y_dim = 'lat')
+lst_clip = lst_dim.rio.clip(vec.geometry, vec.crs)
+
+import matplotlib.pyplot as plt
+
+lst_clip.lst.plot(
+    x = 'lon', y = 'lat', robust = True, cmap = 'inferno'
+)
+
+plt.savefig('temp.png', dpi = 360, bbox_inches = 'tight')
+
