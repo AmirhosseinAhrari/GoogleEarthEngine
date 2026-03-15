@@ -1,0 +1,81 @@
+# -*- coding: utf-8 -*-
+"""00001_cartopy.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-190: Global Mapping using Cartopy
+
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install --upgrade xee
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map()
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+pdsi = (
+    ee.ImageCollection("IDAHO_EPSCOR/TERRACLIMATE")
+    .filterDate('2000','2026')
+    .select('pdsi')
+    .mean()
+)
+
+pdsi
+
+import xarray as xr
+
+ds = xr.open_dataset(
+    pdsi,
+    engine = 'ee',
+    crs ='EPSG:4326',
+    geometry = roi,
+    scale = 1
+)
+
+ds = ds.squeeze('time').drop_vars('time') * 0.01
+
+!pip install cartopy
+
+import cartopy.crs as ccrs
+
+import matplotlib.pyplot as plt
+
+ds
+
+plt.figure()
+ax = plt.axes(projection = ccrs.EqualEarth())
+
+ds.pdsi.plot(
+    x = 'lon' , y = 'lat', transform = ccrs.PlateCarree(),
+    robust = True, cmap = 'RdBu', levels = 10,
+    cbar_kwargs = {
+        'orientation':'horizontal',
+        'pad': 0.07, 'shrink':0.7
+    }
+)
+
+ax.coastlines(resolution = '110m')
+ax.set_global()
+ax.gridlines(draw_labels = True, alpha =0.5)
+ax.set_title('Global Drought Map (2000 - 2025)', fontsize = 18)
+
+plt.savefig('drought_map.png', dpi = 360, bbox_inches = 'tight')
