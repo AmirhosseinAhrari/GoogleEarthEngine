@@ -1,0 +1,124 @@
+# -*- coding: utf-8 -*-
+"""10_session10_crop_phenology.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Landsat - Sentinel Data Analysis in GEE using Python API Session10: Crop Phenological Metrics
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install --upgrade xee
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+def ndvi(img):
+  fmask = img.select('Fmask')
+  bit0 = fmask.bitwiseAnd(1 << 0).neq(0)
+  bit1 = fmask.bitwiseAnd(1 << 1).neq(0)
+  bit3 = fmask.bitwiseAnd(1 << 3).neq(0)
+  cloud_mask = bit0.Or(bit1).Or(bit3)
+  index = img.normalizedDifference(['B8','B4']).rename('ndvi')
+  return index.updateMask(cloud_mask.Not()).copyProperties(img, ['system:time_start'])
+
+sen2 = (
+    ee.ImageCollection("NASA/HLS/HLSS30/v002")
+    .filterDate('2024','2025')
+    .filterBounds(roi)
+    .map(ndvi)
+)
+
+sen2
+
+import xarray as xr
+
+ds = xr.open_dataset(
+    sen2,
+    engine = 'ee',
+    crs = 'EPSG:3857',
+    scale = 100,
+    geometry = roi
+)
+
+ds = ds.sortby('time') * 1
+
+ds10dys = ds.resample(time = '10D').max('time')
+
+ds10dys.ndvi.plot(
+    x = 'X', y = 'Y', robust = True, col = 'time', col_wrap = 7
+)
+
+ds_smooth = ds10dys.rolling(time = 3, center = True, min_periods = 1).mean('time')
+
+ds_smooth.ndvi.plot(
+    x = 'X', y = 'Y', robust = True, col = 'time', col_wrap = 7
+)
+
+ndvi_peak = ds_smooth.max('time')
+
+ndvi_peak.ndvi.plot(
+    x = 'X', y = 'Y', robust =True
+)
+
+ndvi_base = ds_smooth.min('time')
+
+ndvi_base.ndvi.plot(
+    x = 'X', y = 'Y', robust = True
+)
+
+ndvi_amplitude = ndvi_peak - ndvi_base
+
+ndvi_amplitude.ndvi.plot(
+    x = 'X', y = 'Y', robust = True
+)
+
+ndvi_thr = 0.2 * ndvi_amplitude + ndvi_base
+
+ndvi_thr.ndvi.plot(
+    x = 'X', y = 'Y', robust = True
+)
+
+ndvi_above = (ds_smooth > ndvi_thr).astype(int)
+
+ndvi_above.ndvi.plot(
+    x = 'X', y = 'Y', col = 'time', col_wrap = 7
+)
+
+sos = ndvi_above.ndvi.idxmax('time').dt.dayofyear
+
+sos.plot(
+    x = 'X', y = 'Y', robust = True
+)
+
+eos = ndvi_above.ndvi.isel(time = slice(None, None, -1)).idxmax('time').dt.dayofyear
+
+eos.plot(
+    x = 'X', y = 'Y', robust = True
+)
+
+los = eos - sos
+
+los = (eos - sos).where(eos > sos)
+
+los.plot(
+    x = 'X', y = 'Y', robust = True
+)
