@@ -1,0 +1,141 @@
+# -*- coding: utf-8 -*-
+"""12_session12_downscaling.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Landsat - Sentinel Data Analysis in GEE using Python API Session12: Image Downscaling
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+!pip install --upgrade xee
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+import geemap
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+def tir_ndvi(img):
+  ms = img.select('SR_B.*').multiply(2.75e-05).add(-0.2)
+  ndvi = ms.normalizedDifference(['SR_B5','SR_B4']).rename('ndvi')
+  gndvi = ms.normalizedDifference(['SR_B5','SR_B3']).rename('gndvi')
+  tir = img.select('ST_B10').multiply(0.00341802).add(149).rename('tir')
+  return ndvi.addBands(gndvi).addBands(tir)
+
+
+landsat = (
+    ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+    .filterDate('2025','2026')
+    .filterBounds(roi)
+    .filter(ee.Filter.lt('CLOUD_COVER', 10))
+    .map(tir_ndvi)
+)
+
+landsat_mean = landsat.median()
+index_std = landsat.select('ndvi','gndvi').reduce(ee.Reducer.stdDev())
+dataset = landsat_mean.addBands(index_std)
+
+dataset
+
+import xarray as xr
+
+ds100 = xr.open_dataset(
+    dataset,
+    engine = 'ee',
+    crs = 'EPSG:3857',
+    geometry = roi,
+    scale = 100
+)
+
+ds100 = ds100.squeeze('time').drop_vars('time') * 1
+
+ds100.tir.plot(
+    x = 'X', y = 'Y', robust = True
+)
+
+ds100.ndvi.plot(
+    x = 'X', y = 'Y', robust = True
+)
+
+df = ds100.to_dataframe().dropna()
+
+y = df['tir']
+x = df.drop(columns = 'tir', axis = 1)
+
+x
+
+y
+
+from sklearn.model_selection import train_test_split
+
+x_train, x_test, y_train, y_test = train_test_split(
+    x, y, test_size = 0.2, random_state = 42
+)
+
+from sklearn.ensemble import RandomForestRegressor
+
+model = RandomForestRegressor(n_estimators = 100, random_state = 42)
+model.fit(x_train, y_train)
+
+from sklearn.metrics import mean_squared_error, r2_score
+
+y_pred = model.predict(x_test)
+
+import numpy as np
+
+print(np.sqrt(mean_squared_error(y_test, y_pred)))
+
+print(r2_score(y_test, y_pred))
+
+ds30 = xr.open_dataset(
+    dataset,
+    engine = 'ee',
+    crs = 'EPSG:3857',
+    geometry = roi,
+    scale = 30
+)
+
+ds30 = ds30.squeeze('time').drop_vars('time') * 1
+
+df30 = ds30.to_dataframe().dropna()
+
+x30 = df30.drop('tir', axis = 1)
+
+x30
+
+df30['temp30m'] = model.predict(x30)
+
+dx = df30.to_xarray().sortby('Y','X')
+
+dx.tir.plot(
+    x = 'X', y = 'Y', robust = True
+)
+
+dx.temp30m.plot(
+    x = 'X', y = 'Y', robust =True
+)
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(1, 2, figsize = (10, 4))
+plt.tight_layout(w_pad = 5)
+
+dx.tir.plot(x = 'X', y = 'Y', ax = ax[0], robust = True)
+dx.temp30m.plot(x = 'X', y = 'Y', ax = ax[1], robust = True)
+
+plt.savefig('tir_downscale.png', dpi = 360, bbox_inches = 'tight')
