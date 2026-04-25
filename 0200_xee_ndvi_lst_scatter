@@ -1,0 +1,117 @@
+# -*- coding: utf-8 -*-
+"""00003_scatterplot.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-193: NDVI - LST Scatterplot Analysis in Python
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install --upgrade --pre xee
+!pip install -U geemap
+import ee
+import geemap
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+import shapely
+from xee import helpers
+
+vec = shapely.geometry.shape(roi.getInfo())
+
+vec
+
+def ndvi_lst(img):
+  qa_band = img.select('QA_PIXEL')
+  bit1 = qa_band.bitwiseAnd(1 << 1).neq(0)
+  bit2 = qa_band.bitwiseAnd(1 << 2).neq(0)
+  bit3 = qa_band.bitwiseAnd(1 << 3).neq(0)
+  bit4 = qa_band.bitwiseAnd(1 << 4).neq(0)
+  cloud_mask = bit1.Or(bit2).Or(bit3).Or(bit4)
+  sr = img.select('SR_B.*').multiply(2.75e-05).add(-0.2)
+  ndvi = sr.normalizedDifference(['SR_B5','SR_B4']).rename('ndvi')
+  lst = img.select('ST_B10').multiply(0.00341802).add(149)
+  lst_cel = lst.subtract(273.15).rename('lst')
+  stack = ee.Image.cat([ndvi, lst_cel])
+  return stack.updateMask(cloud_mask.Not())
+
+
+landsat = (
+    ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+    .filterDate('2025','2026')
+    .filterBounds(roi)
+    .filter(ee.Filter.lt('CLOUD_COVER',10))
+    .map(ndvi_lst)
+    .median()
+)
+
+dw = (
+    ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
+    .filterDate('2025', '2026')
+    .filterBounds(roi)
+    .select('label')
+    .mode().rename('lc')
+)
+
+dataset = ee.Image.cat([landsat, dw])
+
+dataset
+
+import xarray as xr
+
+from xee import helpers
+
+grid_params = helpers.fit_geometry(
+    geometry = vec,
+    grid_crs = 'EPSG:3857',
+    grid_scale = (30, -30)
+)
+
+ds = xr.open_dataset(
+    dataset,
+    engine = 'ee',
+    **grid_params
+)
+
+ds = ds.squeeze('time').drop_vars('time') * 1
+
+ds
+
+import matplotlib.pyplot as plt
+
+ndvi_vals = ds.ndvi.values.flatten()
+lst_vals = ds.lst.values.flatten()
+lc_vals = ds.lc.values.flatten()
+
+fig, ax = plt.subplots(2, 2, figsize = (10, 8))
+
+ds.ndvi.plot(x = 'x', y = 'y', ax = ax[0,0], robust = True,
+             cmap = 'RdYlGn')
+
+ds.lst.plot(x = 'x', y = 'y', ax = ax[0, 1], robust = True,
+            cmap = 'coolwarm')
+
+ds.lc.plot(x = 'x', y = 'y', ax = ax[1, 0])
+
+ax[1,1].scatter(x = ndvi_vals, y = lst_vals, c = lc_vals, alpha = 0.5, s= 4)
+ax[1,1].set_ylabel('LST [cel]')
+ax[1,1].set_xlabel('NDVI')
+ax[1,1].grid(ls = ':')
+
+plt.tight_layout()
+
