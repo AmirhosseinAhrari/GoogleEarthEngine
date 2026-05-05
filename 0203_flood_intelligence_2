@@ -1,0 +1,129 @@
+# -*- coding: utf-8 -*-
+"""02_session2_sen2_flood.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Flood Intelligence Workshop - Session2: Flood Detection and Mapping using Sentinel-2
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install --upgrade --pre xee
+
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+"""# **Study Area**"""
+
+import geemap
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+"""# **Sentinel-2 Image Collections**"""
+
+def ndwi(img):
+  prob = img.select('probability')
+  clear_pixel = prob.lt(20)
+  sr = img.select('B.*').multiply(0.0001)
+  index = sr.normalizedDifference(['B3','B8']).rename('ndwi')
+  return index.updateMask(clear_pixel).copyProperties(img, ['system:time_start'])
+
+sen2 = (
+    ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    .linkCollection(ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY"), 'probability')
+    .filterDate('2018','2020')
+    .filterBounds(roi)
+)
+
+sen2_ndwi = sen2.map(ndwi)
+
+sen2_ndwi.limit(100)
+
+"""# **From Image Collection to Xarray**"""
+
+from shapely.geometry import shape
+
+vec = shape(roi.getInfo())
+
+vec
+
+sen2.first().select('B1').projection()
+
+from xee import helpers
+
+grid_params = helpers.fit_geometry(
+    geometry = vec,
+    grid_crs = 'EPSG:32640',
+    grid_scale = (100, -100)
+)
+
+import xarray as xr
+
+ds = xr.open_dataset(
+    sen2_ndwi,
+    engine = 'ee',
+    **grid_params
+)
+
+ds = ds.sortby('time') * 1
+
+"""# **Flood Detection**"""
+
+baseline = ds.median(dim = 'time')
+
+baseline.ndwi.plot(x = 'x', y ='y', robust = True, cmap = 'RdBu')
+
+ndwi_monthly = ds.resample(time = 'M').max('time')
+
+ndwi_anomaly  = ndwi_monthly - baseline
+
+flood_img = ndwi_anomaly.sel(time = '2019-04').squeeze('time').drop_vars('time')
+flood_img
+
+flood_img.ndwi.plot(x = 'x', y = 'y', robust = True)
+
+flood_region = xr.where(flood_img.ndwi > 0.2, 1, 0)
+
+flood_region.plot(x = 'x', y = 'y')
+
+!pip install rioxarray
+import rioxarray
+
+x_res, y_res = flood_region.rio.resolution()
+pixel_area = abs(x_res * y_res)
+pixel_area
+
+(((flood_region == 1).astype(int).sum(dim = ['y','x']).item()) * pixel_area) / 1e6
+
+"""# **Visualization**"""
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(1, 3, figsize = (14,4))
+
+baseline.ndwi.plot(x = 'x', y = 'y', robust = True, ax = ax[0])
+flood_img.ndwi.plot(x = 'x', y = 'y', robust = True, ax = ax[1])
+flood_region.plot(x = 'x', y = 'y', ax = ax[2])
+
+ax[0].set_title('baseline')
+ax[1].set_title('flood image')
+ax[2].set_title('flood region')
+
+plt.tight_layout()
+
+plt.savefig('flood_img.png', dpi = 360, bbox_inches ='tight')
