@@ -1,0 +1,75 @@
+
+/*
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutotrial-196: Change Detection using Similarity Analysis
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+*/
+
+var cor = [
+  [48.43585383235769,31.04525084475113],
+  [48.54571643546792,31.00641598788586],
+  [48.59103475772975,31.109352515142874], 
+  [48.56219732498698,31.12081608800958], 
+  [48.56013590935807,31.12875084664446], 
+  [48.51584761462617,31.142268591822738], 
+  [48.480825483763915,31.125961371266257], 
+  [48.47155918132736,31.126105909226585], 
+  [48.43585383235769,31.04525084475113]
+  ]
+
+var geometry = ee.Geometry.Polygon(cor)
+
+Map.setOptions('SATELLITE')
+Map.centerObject(geometry)
+Map.addLayer(geometry)
+
+var ds2017 = ee.ImageCollection("GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL")
+.filterDate('2017','2018')
+.filterBounds(geometry)
+.mosaic()
+
+print(ds2017)
+Map.addLayer(ds2017.clip(geometry),{bands: ['A00','A05','A10']},'2017',false)
+
+var ds2025 = ee.ImageCollection("GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL")
+.filterDate('2025','2026')
+.filterBounds(geometry)
+.mosaic()
+
+Map.addLayer(ds2025.clip(geometry),{bands: ['A00','A05','A10']}, '2025', false)
+
+
+var similarity = ds2017.multiply(ds2025).reduce(ee.Reducer.sum())
+
+print(similarity)
+
+Map.addLayer(similarity.clip(geometry),[],'similarity',false)
+
+print(
+  ui.Chart.image.histogram(similarity, geometry, 100)
+  )
+
+var change_map = similarity.lt(0.7)
+
+Map.addLayer(change_map.clip(geometry),[],'change_map',false)
+
+var change_vec = change_map.selfMask().reduceToVectors({
+  geometry: geometry, scale: 30,
+})
+
+Map.addLayer(change_vec,{color: 'red'}, 'change_vec',false)
+
+var change_area = change_vec.geometry().area(1).divide(1e6)
+
+print(change_area)
+
+Export.table.toDrive({
+  collection: change_vec, description: 'change_vec_map', fileFormat: 'SHP'
+})
+
+
+
