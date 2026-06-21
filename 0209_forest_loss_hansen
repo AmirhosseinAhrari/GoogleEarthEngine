@@ -1,0 +1,123 @@
+# -*- coding: utf-8 -*-
+"""00009_hansen_forest_loss.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutotrial-198: Froest Loss Change Detection using Hansen Product and NDVI
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install --upgrade --pre xee
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+"""# **Hansen Product**"""
+
+import geemap
+
+hansen = (
+    ee.Image("UMD/hansen/global_forest_change_2025_v1_13")
+    .select('lossyear').eq(10)
+)
+hansen
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+map.addLayer(hansen,{},'hansen')
+
+roi = map.draw_last_feature.geometry()
+
+roi
+
+"""# **MODIS NDVI**"""
+
+modis = (
+    ee.ImageCollection("MODIS/061/MOD13Q1")
+    .filterDate('2000','2026')
+    .select('NDVI')
+)
+
+modis
+
+"""# **to Xarray**"""
+
+from xee import helpers
+from shapely.geometry import shape
+import xarray as xr
+
+grid_params = helpers.fit_geometry(
+    geometry = shape(roi.getInfo()),
+    grid_crs = 'EPSG:3857',
+    grid_scale = (250, -250)
+)
+
+ds = xr.open_dataset(
+    modis,
+    engine = 'ee',
+    **grid_params
+)
+
+ds = ds.sortby('time') * 0.0001
+
+"""# **Forest Change Detection**"""
+
+ds_annual = ds.resample(time = 'YE').median('time')
+
+ds_before = ds_annual.sel(time = slice('2008','2009')).median('time')
+ds_before.NDVI.plot(x = 'x', y = 'y', cmap = 'RdYlGn', robust = True)
+
+ds_after = ds_annual.sel(time  = slice('2010','2011')).median('time')
+ds_after.NDVI.plot(x = 'x', y = 'y', robust = True, cmap = 'RdYlGn')
+
+ds_change = ds_after - ds_before
+ds_change.NDVI.plot(x = 'x', y = 'y', robust = True)
+
+ds_mask = (ds_change.NDVI <= -0.15).astype(int)
+ds_mask.plot(x = 'x', y = 'y')
+
+"""# **Changed Area (km2)**"""
+
+!pip install rioxarray
+import rioxarray
+
+x_res, y_res = ds_mask.rio.resolution()
+print(x_res)
+print(y_res)
+
+pixel_area = abs(x_res * y_res)
+print(pixel_area)
+
+((ds_mask == 1).astype(int).sum(dim = ['x','y']).item() * pixel_area) / 1e6
+
+"""# **Visualization**"""
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(1,3, figsize = (18, 5))
+
+ds_before.NDVI.plot(x = 'x', y = 'y', robust = True, ax = ax[0], cmap = 'RdYlGn')
+ax[0].set_title('Before', fontsize = 20)
+
+ds_after.NDVI.plot(x = 'x', y = 'y', ax = ax[1], cmap = 'RdYlGn', robust = True)
+ax[1].set_title('After', fontsize = 20)
+
+ds_mask.plot(x = 'x', y = 'y', ax = ax[2])
+ax[2].set_title('Forest Change', fontsize = 20)
+
+
+plt.tight_layout()
+
+plt.savefig('forest_change.png', dpi = 360, bbox_inches = 'tight')
