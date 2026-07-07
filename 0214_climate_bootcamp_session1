@@ -1,0 +1,132 @@
+# -*- coding: utf-8 -*-
+"""01_class1_precipitation_preparation.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Climate Data Analysis Bootcamp using GEE and Python - Session1: Precipitation Analysis
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+!pip install --upgrade --pre xee
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+"""# **Study Area**"""
+
+import geemap
+
+map = geemap.Map()
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+iran = (
+    ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017")
+    .filterBounds(roi)
+    .geometry().simplify(1000)
+)
+
+map.addLayer(iran, {}, 'Iran')
+
+"""# **Precipitation Image Collection**"""
+
+pr = (
+    ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
+    .filterDate('2020','2026')
+    .select('total_precipitation_sum')
+)
+
+pr
+
+"""# **to Xarray**"""
+
+from xee import helpers
+from shapely.geometry import shape
+import xarray as xr
+
+grid_params = helpers.fit_geometry(
+    geometry = shape(iran.getInfo()),
+    grid_crs = 'EPSG:4326',
+    grid_scale = (0.11, -0.11)
+)
+
+ds = xr.open_dataset(
+    pr,
+    engine  = 'ee',
+    **grid_params
+)
+
+ds = ds.sortby('time') * 1000
+
+ds
+
+"""# **Clip**"""
+
+!pip install rioxarray
+import rioxarray
+
+iran_gdf = geemap.ee_to_gdf(ee.FeatureCollection(iran))
+
+ds_clip = ds.rio.clip(iran_gdf.geometry, iran_gdf.crs)
+
+"""# **Precipitation Analysis**"""
+
+pr_mean = ds_clip.mean(dim = 'time')
+pr_max = ds_clip.max(dim = 'time')
+pr_min = ds_clip.min(dim = 'time')
+
+pr_max.total_precipitation_sum.plot.contourf(
+    x = 'x', y = 'y', robust = True, cmap = 'turbo_r', levels = 10
+)
+
+pr_annual = ds_clip.resample(time = 'YE').sum('time')
+
+pr_annual.total_precipitation_sum.plot.contourf(
+    x = 'x', y = 'y', robust = True, col = 'time',
+    col_wrap = 3, cmap = 'turbo_r', levels = 15
+)
+
+pr_monthly = ds_clip.groupby('time.month').mean('time')
+
+pr_monthly.total_precipitation_sum.plot.contourf(
+    x = 'x', y = 'y', robust = True, cmap = 'turbo_r', levels = 10,
+    col = 'month', col_wrap = 6
+)
+
+pr_season = ds_clip.groupby('time.season').mean('time')
+
+import matplotlib.pyplot as plt
+
+pr_season.total_precipitation_sum.plot.contourf(
+    x = 'x', y = 'y', robust = True, cmap = 'turbo_r', levels = 10,
+    col = 'season'
+)
+
+plt.savefig('pr_seasonal.png', dpi = 360, bbox_inches = 'tight')
+
+pr_point = ds_clip.sel(x = 45.90897209076619,
+                       y = 36.96423791062324, method = 'nearest')
+
+pr_daily_df = pr_point.to_dataframe()['total_precipitation_sum']
+
+pr_daily_df.to_csv('pr_daily.csv')
+
+pr_monthly_df = pr_daily_df.resample('M').sum()
+
+pr_monthly_df.plot()
+
+pr_annual = pr_daily_df.resample('YE').sum()
+
+pr_annual.plot()
