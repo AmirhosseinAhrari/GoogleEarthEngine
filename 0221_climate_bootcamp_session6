@@ -1,0 +1,179 @@
+# -*- coding: utf-8 -*-
+"""06_class6_xclim_indices.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Climate Data Analysis Bootcamp using GEE and Python - Session6: Climate Extremes with XClim
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+!pip install --upgrade --pre xee
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+"""# **Study Area**"""
+
+import geemap
+
+map = geemap.Map()
+map
+
+point = map.draw_last_feature.geometry()
+point
+
+roi = (
+    ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017")
+    .filterBounds(point)
+    .geometry().simplify(1000)
+)
+
+roi
+
+map.addLayer(roi, {}, 'Iran')
+
+"""# **ERA-5 Image Collection**"""
+
+collection = (
+    ee.ImageCollection("ECMWF/ERA5/DAILY")
+    .filterDate('2010','2016')
+    .select(['minimum_2m_air_temperature',
+             'maximum_2m_air_temperature',
+             'total_precipitation'],[
+                 'min_temp',
+                 'max_temp',
+                 'pr'
+             ])
+)
+
+collection
+
+"""# **to Xarray**"""
+
+from xee import helpers
+from shapely.geometry import shape
+import xarray as xr
+
+grid_params = helpers.fit_geometry(
+    geometry = shape(roi.getInfo()),
+    grid_crs = 'EPSG:4326',
+    grid_scale = (0.3, -0.3)
+)
+
+ds  = xr.open_dataset(
+    collection,
+    engine = 'ee',
+    **grid_params
+)
+
+ds_temp = ds[['min_temp','max_temp']] - 273.15
+ds_pr = ds['pr'] * 1000
+
+"""# **Clip**"""
+
+import geopandas as gpd
+
+roi_gdf = geemap.ee_to_gdf(ee.FeatureCollection(roi))
+
+!pip install rioxarray
+import rioxarray
+
+temp_clip = ds_temp.rio.clip(roi_gdf.geometry, roi_gdf.crs)
+
+pr_clip = ds_pr.rio.clip(roi_gdf.geometry, roi_gdf.crs)
+
+"""# **Temperature**"""
+
+temp_mean = temp_clip.mean(dim = 'time')
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(1, 2, figsize = (12, 5))
+
+temp_mean.min_temp.plot.contourf(
+    x = 'x', y = 'y', robust = True, ax = ax[0],
+    levels = 10, cmap = 'Blues'
+)
+
+temp_mean.max_temp.plot.contourf(
+    x = 'x', y = 'y', robust = True,
+    ax = ax[1], levels = 10, cmap = 'Reds'
+)
+
+plt.tight_layout()
+
+!pip install xclim
+import xclim.indicators.atmos as xin
+
+temp_clip.min_temp.attrs['units'] = 'degC'
+temp_clip.max_temp.attrs['units'] = 'degC'
+
+temp_clip
+
+hw_freq = xin.heat_wave_frequency(
+    tasmin = temp_clip.min_temp,
+    tasmax = temp_clip.max_temp,
+    thresh_tasmin = '30.0 degC',
+    thresh_tasmax = '40.0 degC'
+
+)
+
+hw_freq.plot.contourf(
+    x = 'x', y = 'y', robust = True,
+    cmap = 'turbo', levels = 8, col = 'time',
+    col_wrap = 3
+)
+
+hw_index = xin.heat_wave_index(
+    tasmax = temp_clip.max_temp,
+    thresh = '40 degC',
+    window = 7
+)
+
+hw_index.plot.contourf(
+    x = 'x', y = 'y', robust = True,
+    cmap = 'turbo', levels = 8, col = 'time',
+    col_wrap = 3
+)
+
+"""# **Precipitation**"""
+
+pr_mean = pr_clip.mean(dim = 'time')
+
+pr_mean.plot.contourf(
+    x = 'x', y = 'y', robust = True,
+    levels = 8
+)
+
+pr_clip.attrs['units'] = 'mm/d'
+
+dry_spell = xin.dry_spell_frequency(
+    pr = pr_clip,
+    thresh = '0.5 mm',
+    window = 7
+)
+
+dry_spell.plot.contourf(
+    x = 'x', y = 'y', col = 'time', col_wrap = 3,
+    levels = 8, cmap = 'turbo', robust = True
+)
+
+dry_days = xin.dry_days(
+    pr = pr_clip,
+    thresh = '0.2 mm/d'
+)
+
+dry_days.plot.contourf(
+    x = 'x', y= 'y', robust = True, cmap = 'turbo',
+    levels = 8, col = 'time', col_wrap = 3
+)
