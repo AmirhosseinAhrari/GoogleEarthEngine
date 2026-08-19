@@ -1,0 +1,155 @@
+# -*- coding: utf-8 -*-
+"""00022_sen5_no2.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-209: Nitrogen Dioxide (No2) Analysis using Sentinel-5P
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install --upgrade --pre xee
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+"""# **Study Area**"""
+
+import geemap
+
+map = geemap.Map()
+map
+
+point = map.draw_last_feature.geometry()
+point
+
+tehran = (
+    ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level1")
+    .filterBounds(point)
+    .geometry()
+)
+
+tehran
+
+map.addLayer(tehran, {},'Tehran')
+
+"""# **Sentienl-5 NO2 Image Collection**"""
+
+no2 = (
+    ee.ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")
+    .filterBounds(tehran)
+    .filterDate('2020','2026')
+    .select(['NO2_column_number_density'],['no2'])
+)
+
+no2.size()
+
+no2.limit(100)
+
+"""# **to Xarray**"""
+
+from xee import helpers
+from shapely.geometry import shape
+import xarray as xr
+
+grid_1km = helpers.fit_geometry(
+    geometry = shape(tehran.getInfo()),
+    grid_crs = 'EPSG:4326',
+    grid_scale = (0.01, -0.01)
+)
+
+ds = xr.open_dataset(
+    no2,
+    engine = 'ee',
+    **grid_1km,
+    chunks = 'auto'
+)
+
+ds
+
+from dask.diagnostics import ProgressBar
+
+with ProgressBar():
+  ds = ds.compute()
+
+"""# **Clip**"""
+
+import geopandas as gpd
+!pip install rioxarray
+import rioxarray
+
+tehran_gdf = geemap.ee_to_gdf(ee.FeatureCollection(tehran))
+
+tehran_gdf.plot()
+
+ds_clip = ds.rio.clip(tehran_gdf.geometry, tehran_gdf.crs)
+
+ds_clip
+
+"""# **Preview**"""
+
+ds_mean = ds_clip.mean(dim = 'time')
+
+ds_mean.no2.plot(x = 'x', y = 'y', cmap = 'Spectral_r', robust = True)
+
+"""# **Multi - Temporal Analysis**"""
+
+ds_month = ds_clip.groupby('time.month').mean('time')
+
+ds_month.no2.plot(
+    x = 'x', y = 'y', robust = True, col = 'month',
+    col_wrap = 6, cmap = 'Spectral_r'
+)
+
+ds_annual = ds_clip.resample(time = 'YE').mean('time')
+
+ds_annual.no2.plot(
+    x = 'x', y = 'y', robust = True, col = 'time',
+    cmap = 'Spectral_r', col_wrap = 3
+)
+
+ds_anomaly = ds_annual - ds_annual.mean('time')
+
+ds_anomaly.no2.plot(
+    x = 'x', y = 'y', robust = True, col = 'time',
+    col_wrap = 3, cmap = 'Spectral_r'
+)
+
+ds_annual_diff = ds_annual.diff('time')
+
+ds_annual_diff.no2.plot.contourf(
+    x = 'x', y = 'y', robust = True, col = 'time',
+    col_wrap = 3, cmap = 'Spectral_r', levels = 20
+)
+
+"""# **Point Based Monitoring**"""
+
+ds_daily = ds.resample(time ='D').mean('time')
+
+df = ds_daily.sel(x = 51.36883410111137 ,
+             y = 35.720296441621386, method = 'nearest').to_dataframe().no2
+
+df.to_csv('no2_point.csv')
+
+import matplotlib.pyplot as plt
+
+thresh = df.quantile(0.95)
+
+extreme = df[df >= thresh]
+
+extreme
+
+fig, ax = plt.subplots(figsize = (10, 3))
+
+ax.plot(df.index, df)
+ax.scatter(extreme.index, extreme, color = 'red')
