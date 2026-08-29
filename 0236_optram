@@ -1,0 +1,162 @@
+# -*- coding: utf-8 -*-
+"""00025_sen2_optram.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: Google Earth Engine Tutorial-212: Sentinel2 Soil Moisture Estimation using NDVI and STR (OPTRAM)
+This code is part of a tutorial series on Earth Engine programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install --upgrade --pre xee
+!pip install -U geemap
+
+import ee
+
+ee.Authenticate()
+ee.Initialize(
+    project = 'ee-amirhosseinahrari',
+    opt_url = 'https://earthengine-highvolume.googleapis.com'
+)
+
+"""# **Study Area**"""
+
+import geemap
+
+map = geemap.Map(basemap = 'SATELLITE')
+map
+
+roi = map.draw_last_feature.geometry()
+roi
+
+"""# **Sentinel-2 Image Collection**"""
+
+sen2 = (
+    ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    .linkCollection(
+        ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY") ,
+        'probability'
+    )
+    .filterDate('2025','2026')
+    .filterBounds(roi)
+)
+
+sen2
+
+def ndvi_str(img):
+  clear_pixels = img.select('probability').lt(20)
+  sr_bands = img.select('B.*').multiply(0.0001)
+  ndvi = sr_bands.normalizedDifference(['B8','B4']).rename('ndvi')
+  stri = sr_bands.expression('(1 - swir) ** 2 / (2 * swir)',{
+      'swir': sr_bands.select('B11')
+  }).rename('stri')
+  stack = ee.Image.cat([ndvi, stri])
+  return stack.updateMask(clear_pixels).copyProperties(img,['system:time_start'])
+
+sen2_ndvi_str = sen2.map(ndvi_str)
+
+sen2_ndvi_str
+
+"""# **to Xarray**"""
+
+sen2.first().select('B1').projection()
+
+from xee import helpers
+from shapely.geometry import shape
+import xarray as xr
+
+grid_10m = helpers.fit_geometry(
+    geometry = shape(roi.getInfo()),
+    grid_crs = 'EPSG:32638',
+    grid_scale = (10, -10)
+)
+
+ds = xr.open_dataset(
+    sen2_ndvi_str,
+    engine = 'ee',
+    **grid_10m,
+    chunks = 'auto'
+)
+
+ds
+
+from dask.diagnostics import ProgressBar
+
+with ProgressBar():
+  ds = ds.compute()
+
+ds
+
+"""# **Temporal Resampling**"""
+
+ds = ds.sortby('time')
+
+ds = ds.resample(time = 'M').mean('time')
+
+ds_smooth = ds.rolling(time = 3, center = True, min_periods = 1).mean('time')
+
+ds_mean = ds.mean('time')
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(1, 2, figsize = (10, 4))
+
+ds_mean.ndvi.plot(ax = ax[0], robust = True)
+ds_mean.stri.plot(ax = ax[1], robust = True)
+
+plt.tight_layout()
+
+"""# **OPTRAM**"""
+
+import numpy as np
+
+x = ds_mean.ndvi.values.flatten()
+x = x[~np.isnan(x)]
+x = x.reshape(-1, 1)
+x
+
+y = ds_mean.stri.values.flatten()
+y = y[~np.isnan(y)]
+y
+
+idx = np.random.choice(len(x), 10000, replace = False)
+
+x_samples = x[idx]
+x_samples
+
+y_samples = y[idx]
+y_samples
+
+from sklearn.linear_model import QuantileRegressor
+
+wet_edge = QuantileRegressor(
+    quantile = 0.95, alpha = 0
+).fit(x_samples, y_samples)
+
+s_w = wet_edge.coef_[0]
+s_w
+
+i_w = wet_edge.intercept_
+i_w
+
+dry_edge = QuantileRegressor(
+    quantile = 0.05, alpha =0
+).fit(x_samples, y_samples)
+
+s_d = dry_edge.coef_[0]
+s_d
+
+i_d = dry_edge.intercept_
+i_d
+
+sm = (i_d + s_d * ds_mean.ndvi - ds_mean.stri) / (
+    i_d - i_w + (s_d - s_w) * ds_mean.ndvi
+)
+
+sm = sm.clip(0,1)
+
+sm.plot(robust = True)
