@@ -1,0 +1,97 @@
+# -*- coding: utf-8 -*-
+"""Untitled0.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: PySTAC Tutorial-1: Sentinel-2 NDVI
+This code is part of a tutorial series on python eo programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install -q pystac-client stackstac
+
+from pystac_client import Client
+
+catalog = Client.open(
+    'https://earth-search.aws.element84.com/v1'
+)
+
+for collection in catalog.get_collections():
+  print(collection.id)
+
+bbox = [48.507907, 31.069258, 48.555613, 31.114261]
+
+search = catalog.search(
+    collections = ['sentinel-2-l2a'],
+    bbox = bbox,
+    datetime = '2025',
+    query = {'eo:cloud_cover':{'lt':'20'}}
+
+)
+
+items = search.item_collection()
+
+len(items)
+
+items[0].assets.keys()
+
+import stackstac
+
+ds = stackstac.stack(
+    items,
+    assets = ['red', 'rededge1','nir'],
+    bounds_latlon= bbox,
+    epsg = 3857,
+    resolution = 10
+)
+
+ds_clean = ds.to_dataset('band').drop_dims('band').reset_coords(drop = True).drop_attrs()
+
+ds_clean
+
+red = ds_clean['red'].clip(min = 0)
+red_edge = ds_clean['rededge1'].clip(min = 0)
+nir = ds_clean['nir'].clip(min = 0)
+
+ndvi = (nir - red) / (nir + red)
+ndre = (nir - red_edge) / (nir + red_edge)
+
+ndvi
+
+ndvi_mean = ndvi.mean(dim = 'time')
+
+ndre_mean = ndre.mean(dim = 'time')
+
+from dask.diagnostics import ProgressBar
+
+import warnings
+import logging
+
+warnings.filterwarnings('ignore', category = RuntimeWarning)
+logging.getLogger('rasterio._env').setLevel(logging.ERROR)
+
+with ProgressBar():
+  ndvi_mean = ndvi_mean.compute()
+
+ndvi_mean.plot(robust = True)
+
+with ProgressBar():
+  ndre_mean = ndre_mean.compute()
+
+ndre_mean.plot(robust =True)
+
+!pip install rioxarray
+import rioxarray
+
+out = ndre_mean.copy()
+out = out.rio.write_crs('EPSG:3857')
+out = out.rio.set_spatial_dims(x_dim = 'x', y_dim = 'y')
+out = out.rio.write_coordinate_system(inplace = True)
+
+out
+
+out.rio.to_raster('ndre_mean.tiff')
