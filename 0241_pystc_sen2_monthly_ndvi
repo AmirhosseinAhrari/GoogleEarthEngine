@@ -1,0 +1,109 @@
+# -*- coding: utf-8 -*-
+"""0008_pystac_sen2_ndvi.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: PySTAC Tutorial-1: Sentinel-2 Monthly NDVI Analysis in Python
+This code is part of a tutorial series on python eo programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+
+"""
+
+!pip install -q pystac-client stackstac
+
+from pystac_client import Client
+
+catalog = Client.open(
+    'https://earth-search.aws.element84.com/v1'
+)
+
+for collections in catalog.get_collections():
+  print(collections.id)
+
+bbox = [48.815174, 31.930589, 48.862879, 31.968768]
+
+search = catalog.search(
+    collections = ['sentinel-2-c1-l2a'],
+    bbox = bbox,
+    datetime = '2023/2025',
+    query = {'eo:cloud_cover':{'lt':'10'}}
+)
+
+items = search.item_collection()
+
+len(items)
+
+items[0]
+
+items[0].assets.keys()
+
+import stackstac
+
+ds = stackstac.stack(
+    items,
+    assets = ['red','rededge1','nir'],
+    bounds_latlon = bbox,
+    epsg = 3857,
+    resolution = 20
+)
+
+ds_clean = ds.to_dataset('band').drop_dims('band').reset_coords(drop = True).drop_attrs()
+
+ds_clean
+
+nir = ds_clean['nir']
+red = ds_clean['red']
+rededge = ds_clean['rededge1']
+
+ndvi = ((nir - red) / (nir + red)).rename('ndvi')
+ndre = ((nir - rededge)/ (nir + rededge)).rename('ndre')
+
+import xarray as xr
+
+ds_merge = xr.merge([ndvi, ndre])
+
+ds_monthly = ds_merge.resample(time = 'M').max('time')
+
+from dask.diagnostics import ProgressBar
+
+# import warnings
+# import logging
+
+# warnings.filterwarnings('ignore', category= RuntimeWarning)
+# logging.getLogger('rasterio._envi').setLevel(logging.ERROR)
+
+import warnings
+import logging
+warnings.filterwarnings('ignore',category = RuntimeWarning)
+logging.getLogger('rasterio._env').setLevel(logging.ERROR)
+
+with ProgressBar():
+  ds_monthly = ds_monthly.compute()
+
+ds_month = ds_monthly.groupby('time.month').mean('time')
+
+ds_month
+
+ds_month.ndvi.plot(
+    robust = True, col = 'month', col_wrap = 6
+)
+
+ds_month.ndre.plot(
+    robust = True, col = 'month', col_wrap = 6
+)
+
+df = ds_monthly.sel(x = 48.827533, y = 31.959757, method = 'nearest').to_dataframe().drop(['x','y'], axis = 1)
+
+ds_monthly.mean(dim = ['x','y']).to_dataframe().plot()
+
+!pip install -q rioxarray
+import rioxarray
+
+ndvi_out = ds_monthly['ndvi'].sel(time = '2024').copy()
+ndvi_out = ndvi_out.rio.write_crs('EPSG:3857')
+ndvi_out = ndvi_out.rio.set_spatial_dims(x_dim = 'x', y_dim = 'y')
+ndvi_out = ndvi_out.rio.write_coordinate_system(inplace =True)
+ndvi_out.rio.to_raster('ndvi.tiff')
