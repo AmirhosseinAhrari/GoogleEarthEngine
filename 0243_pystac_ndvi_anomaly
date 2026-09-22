@@ -1,0 +1,107 @@
+# -*- coding: utf-8 -*-
+"""0013_ndvi_anomaly.ipynb
+
+Tutorial Code by Amirhossein Ahrari
+YouTube: https://www.youtube.com/@amirhosseinahrarigee
+Tutorial Video: PySTAC Tutorial-4: Sentinel-2 NDVI Anomaly Detection using Python
+This code is part of a tutorial series on python eo programming techniques
+presented on the Amirhossein Ahrari YouTube channel. You are free to use and modify
+this code for academic and non-academic purposes. Don't forget to subscribe to
+the Amirhossein Ahrari channel and follow the videos to support the instructor
+
+"""
+
+!pip install -q pystac-client stackstac
+
+from pystac_client import Client
+
+catalog = Client.open(
+    'https://earth-search.aws.element84.com/v1'
+)
+
+for collection in catalog.get_collections():
+  print(collection.id)
+
+roi = [48.711466, 31.699172, 48.777017, 31.760522]
+
+search = catalog.search(
+    collections = ['sentinel-2-c1-l2a'],
+    bbox = roi,
+    datetime = '2025'
+)
+
+items = search.item_collection()
+
+len(items)
+
+items[0].assets.keys()
+
+import stackstac
+
+ds = stackstac.stack(
+    items,
+    assets = ['red','nir','scl'],
+    bounds_latlon= roi,
+    epsg = 3857,
+    resolution = 10
+)
+
+ds_clean = (
+    ds.to_dataset('band')
+    .drop_dims('band')
+    .reset_coords(drop = True)
+    .drop_attrs()
+
+)
+
+ds_clean
+
+cloud = ds_clean.scl.isin([3,8,9,10])
+veg = ds_clean.scl.isin(4).max('time')
+
+ds_var = ds_clean[['red','nir']].where(cloud == 0)
+
+nir = ds_var['nir']
+red = ds_var['red']
+
+ndvi = (nir - red) / (nir + red)
+
+ndvi_monthly = ndvi.resample(time = 'M').mean('time')
+
+ndvi_monthly = ndvi_monthly.where(veg == 1)
+
+ndvi_monthly
+
+from dask.diagnostics import ProgressBar
+
+import warnings
+warnings.filterwarnings('ignore', category = RuntimeWarning)
+
+import logging
+logging.getLogger('rasterio._env').setLevel(logging.ERROR)
+
+with ProgressBar():
+  ndvi_monthly = ndvi_monthly.compute()
+
+ndvi_monthly.plot(
+    robust = True,
+    col = 'time',
+    col_wrap = 6,
+    cmap = 'RdYlGn'
+)
+
+ndvi_anomaly = ndvi_monthly - ndvi_monthly.mean('time')
+
+ndvi_anomaly.plot(
+    robust = True,
+    col = 'time',
+    col_wrap = 6
+)
+
+ndvi_diff = ndvi_monthly.diff('time')
+
+ndvi_diff.plot(
+    robust = True,
+    col = 'time',
+    col_wrap = 6
+)
